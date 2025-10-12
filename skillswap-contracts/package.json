@@ -1,0 +1,17 @@
+{
+  "name": "skillswap-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for SkillSwap",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "coverage": "hardhat coverage",
+    "deploy": "hardhat ignition deploy",
+    "node": "hardhat node"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.2"
+  }
+}
