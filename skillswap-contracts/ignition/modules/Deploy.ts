@@ -1,17 +1,22 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-const JAN_1ST_2030 = 1893456000;
-const ONE_GWEI: bigint = 1_000_000_000n;
+const EscrowModule = buildModule("EscrowModule", (m) => {
+  const escrow = m.contract("Escrow");
 
-const LockModule = buildModule("LockModule", (m) => {
-  const unlockTime = m.getParameter("unlockTime", JAN_1ST_2030);
-  const lockedAmount = m.getParameter("lockedAmount", ONE_GWEI);
-
-  const lock = m.contract("Lock", [unlockTime], {
-    value: lockedAmount,
-  });
-
-  return { lock };
+  return { escrow };
 });
 
-export default LockModule;
+const AssetTokenModule = buildModule("AssetTokenModule", (m) => {
+  const assetToken = m.contract("AssetToken");
+
+  return { assetToken };
+});
+
+const DeployModule = buildModule("DeployModule", (m) => {
+  const { escrow } = m.useModule(EscrowModule);
+  const { assetToken } = m.useModule(AssetTokenModule);
+
+  return { escrow, assetToken };
+});
+
+export default DeployModule;
