@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 // Using the CORRECT libraries: WalletConnect SignClient and Modal
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
+import { UniversalProvider } from "@walletconnect/universal-provider";
 
 // Import our Hedera configuration file
 import { escrowContractAddress, escrowContractABI, getContract } from './hedera.js';
@@ -68,13 +69,28 @@ function App() {
 
     // NEW: This effect creates the Ethers provider and signer AFTER the user connects
     useEffect(() => {
-        if (signClient && accountId) {
-            const newProvider = new ethers.providers.Web3Provider(signClient);
-            const newSigner = newProvider.getSigner();
-            setProvider(newProvider);
-            setSigner(newSigner);
-            setStatus("✅ Wallet Connected & Ready for Transactions!");
-        }
+        const createEthersProvider = async () => {
+            if (signClient && accountId) {
+                try {
+                    const universalProvider = await UniversalProvider.init({
+                        client: signClient,
+                    });
+
+                    const newProvider = new ethers.providers.Web3Provider(universalProvider);
+                    const newSigner = newProvider.getSigner();
+
+                    setProvider(newProvider);
+                    setSigner(newSigner);
+                    setStatus("✅ Wallet Connected & Ready for Transactions!");
+
+                } catch (error) {
+                    console.error("Failed to create provider:", error);
+                    setStatus("❌ Provider Error");
+                }
+            }
+        };
+
+        createEthersProvider();
     }, [signClient, accountId]);
 
     const handleConnect = async () => { /* ... (This function remains the same as before) ... */ };
