@@ -5,7 +5,6 @@ import { ethers } from "ethers";
 // Using the CORRECT libraries: WalletConnect SignClient and Modal
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
-import { UniversalProvider } from "@walletconnect/universal-provider";
 
 // Import our Hedera configuration file
 import { escrowContractAddress, escrowContractABI, getContract } from './hedera.js';
@@ -16,6 +15,8 @@ function App() {
     const [modal, setModal] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [status, setStatus] = useState("Initializing...");
+
+    // This is the "bridge" - the Ethers.js provider and signer
     const [provider, setProvider] = useState(null);
     const [signer, setSigner] = useState(null);
 
@@ -45,7 +46,7 @@ function App() {
 
                 client.on("session_delete", () => {
                     setAccountId(null);
-                    setProvider(null);
+                    setProvider(null); // Clear the bridge on disconnect
                     setSigner(null);
                 });
 
@@ -67,48 +68,55 @@ function App() {
         initialize();
     }, []);
 
-    // NEW: This effect creates the Ethers provider and signer AFTER the user connects
+    // *** THIS IS THE FIX ***
+    // This effect builds the "bridge" AFTER the user connects their wallet
     useEffect(() => {
-        const createEthersProvider = async () => {
-            if (signClient && accountId) {
-                try {
-                    const universalProvider = await UniversalProvider.init({
-                        client: signClient,
-                    });
-
-                    const newProvider = new ethers.providers.Web3Provider(universalProvider);
-                    const newSigner = newProvider.getSigner();
-
-                    setProvider(newProvider);
-                    setSigner(newSigner);
-                    setStatus("✅ Wallet Connected & Ready for Transactions!");
-
-                } catch (error) {
-                    console.error("Failed to create provider:", error);
-                    setStatus("❌ Provider Error");
-                }
-            }
-        };
-
-        createEthersProvider();
+        if (signClient && accountId) {
+            // Use the WalletConnect client as the EIP-1193 provider for Ethers.js
+            const newProvider = new ethers.providers.Web3Provider(signClient);
+            const newSigner = newProvider.getSigner();
+            setProvider(newProvider);
+            setSigner(newSigner);
+            setStatus("✅ Wallet Connected & Ready for Transactions!");
+        }
     }, [signClient, accountId]);
 
-    const handleConnect = async () => { /* ... (This function remains the same as before) ... */ };
-    const handleDisconnect = async () => { /* ... (This function remains the same as before) ... */ };
+    const handleConnect = async () => {
+        if (!signClient || !modal) return;
+        setIsLoading(true);
+        try {
+            const { uri, approval } = await signClient.connect({
+                requiredNamespaces: { hedera: { methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"], chains: ["hedera:testnet"], events: ["chainChanged", "accountsChanged"] } },
+            });
+            if (uri) {
+                await modal.openModal({ uri });
+                await approval();
+                modal.closeModal();
+            }
+        } catch (error) {
+            console.error("Connection failed:", error); setStatus("❌ Connection Failed");
+        } finally { setIsLoading(false); }
+    };
 
-    // NEW: This is the function that calls our smart contract
+    const handleDisconnect = async () => {
+        if (signClient && signClient.session.length > 0) {
+            const lastSession = signClient.session.get(signClient.session.keys.at(-1));
+            await signClient.disconnect({ topic: lastSession.topic, reason: { code: 6000, message: "User disconnected." } });
+        }
+    };
+
+    // This is the function that calls our smart contract
     const handleCreateTestGig = async () => {
         if (!signer || !accountId) {
-            alert("Please connect your wallet first.");
+            alert("Please connect your wallet first. The signer is not ready.");
             return;
         }
         setStatus("🚀 Sending transaction to Hedera...");
         try {
             const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
 
-            // For the test, the buyer (you) creates a gig for themself as the seller
             const sellerAddress = await signer.getAddress();
-            const gigPrice = ethers.utils.parseUnits("1", 8); // 1 HBAR (Hedera has 8 decimals)
+            const gigPrice = ethers.utils.parseUnits("1", 8); // 1 HBAR (Corrected for Hedera)
 
             const tx = await escrowContract.createGig(sellerAddress, gigPrice);
 
@@ -126,32 +134,6 @@ function App() {
         }
     };
 
-    // Re-add the handleConnect and handleDisconnect functions
-    async function reAddHandleConnect() {
-        if (!signClient || !modal) return;
-        setIsLoading(true);
-        try {
-            const { uri, approval } = await signClient.connect({
-                requiredNamespaces: { hedera: { methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"], chains: ["hedera:testnet"], events: ["chainChanged", "accountsChanged"] } },
-            });
-            if (uri) {
-                await modal.openModal({ uri });
-                await approval();
-                modal.closeModal();
-            }
-        } catch (error) {
-            console.error("Connection failed:", error); setStatus("❌ Connection Failed");
-        } finally { setIsLoading(false); }
-    }
-
-    async function reAddHandleDisconnect() {
-        if (signClient && signClient.session.length > 0) {
-            const lastSession = signClient.session.get(signClient.session.keys.at(-1));
-            await signClient.disconnect({ topic: lastSession.topic, reason: { code: 6000, message: "User disconnected." } });
-        }
-    }
-
-
     return (
         <div className="container">
             <div className="header">
@@ -166,10 +148,10 @@ function App() {
                     {accountId ? (
                         <div className="connected-state">
                             <p><strong>Account:</strong> {accountId}</p>
-                            <button onClick={reAddHandleDisconnect} className="hedera-button disconnect">Disconnect</button>
+                            <button onClick={handleDisconnect} className="hedera-button disconnect">Disconnect</button>
                         </div>
                     ) : (
-                        <button onClick={reAddHandleConnect} className="hedera-button" disabled={isLoading}>
+                        <button onClick={handleConnect} className="hedera-button" disabled={isLoading}>
                             {isLoading ? "🔄 Initializing..." : "🔗 Connect Wallet"}
                         </button>
                     )}
