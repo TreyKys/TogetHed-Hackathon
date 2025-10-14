@@ -1,16 +1,14 @@
 ### `CHANGELOG.md`
 #### **Entry: 2025-10-14**
-**`fix(wallet)`: Reverted to Official WalletConnect and Merged Full UI**
+**`feat(testing)`: Add End-to-End Smart Contract Test**
 
-**1. Diagnosis:**
-   - A regression was introduced in the previous commit, accidentally re-implementing the deprecated `HashConnect` library instead of the working `WalletConnect` solution. This caused a complete failure of the wallet connection logic.
+**1. Goal:**
+   - To conduct the first live, end-to-end test of the frontend's ability to call the `Escrow` smart contract on the Hedera Testnet.
 
 **2. Changes Made:**
-   - **Corrected Wallet Logic:** The entire wallet connection system in `App.jsx` was reverted back to the official, working implementation using `@walletconnect/sign-client` and `@walletconnect/modal`. This is the definitive and correct architecture for our app.
-   - **Integrated Full UI Skeleton:** The new UI components for the Marketplace, USSD Simulator, Agent Zone, and Lending Pool, along with the bottom navigation bar, were successfully merged into the working `App.jsx` file.
+   - **Integrated `ethers.js`:** The `ethers.js` library was integrated with the existing `WalletConnect` setup in `App.jsx` to create a provider and signer when a user's wallet is connected.
+   - **Added Test UI:** A minimal UI was implemented in `App.jsx` specifically for this test, featuring a "Connect Wallet" button and a "Create Test Gig" button.
+   - **Implemented Contract Call:** A new function, `handleCreateTestGig`, was added to call the `createGig` function on the smart contract, passing the required parameters and handling the transaction lifecycle (sending, waiting for confirmation, and displaying status).
 
-**3. Solution:**
-   - By combining the proven WalletConnect logic with the new UI structure, the application is now in a stable, functional state.
-
-**4. Status:**
-   - **Wallet connection is working again.** The full application UI is now visible and navigable. The project is back on the correct technical foundation and is ready for smart contract integration.
+**3. Status:**
+   - The application now has a functional end-to-end test capability. Users can connect their wallet and send a live transaction to the smart contract, verifying the full connection from the UI to the blockchain.
