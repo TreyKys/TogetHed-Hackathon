@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import './App.css';
-import { HashConnect } from 'hashconnect';
-import { ethers } from "ethers";
 
-// --- 1. IMPORT OUR HEDERA CONFIG ---
-import { escrowContractAddress, escrowContractABI, getContract } from './hedera';
+// 1. Using the CORRECT, WORKING libraries: WalletConnect SignClient and Modal
+import SignClient from "@walletconnect/sign-client";
+import { WalletConnectModal } from "@walletconnect/modal";
 
 // --- Reusable UI Components ---
 const GigCard = ({ title, description, reward, skills }) => (
@@ -17,7 +16,7 @@ const GigCard = ({ title, description, reward, skills }) => (
 );
 
 // --- Main App Pages ---
-const Marketplace = ({ onCreateTestGig }) => {
+const Marketplace = () => {
     const [activeTab, setActiveTab] = useState('impact');
     return (
         <div className="marketplace-container">
@@ -25,10 +24,6 @@ const Marketplace = ({ onCreateTestGig }) => {
                 <button onClick={() => setActiveTab('impact')} className={activeTab === 'impact' ? 'active' : ''}>Impact Gigs</button>
                 <button onClick={() => setActiveTab('p2p')} className={activeTab === 'p2p' ? 'active' : ''}>Peer-to-Peer</button>
             </div>
-            {/* --- ADDED THE TEST BUTTON HERE --- */}
-            <button onClick={onCreateTestGig} className="hedera-button" style={{marginBottom: '20px', background: '#007bff', color: 'white'}}>
-                <i className="fas fa-vial"></i> Run First On-Chain Test
-            </button>
             <div className="gig-list">
                 {activeTab === 'impact' ? (
                     <GigCard title="🌱 Build a Crop Traceability dApp" description="Seeking a developer for a farm-to-table tracking system on Hedera for a coffee cooperative." reward="5,000" skills={["Solidity", "Hedera", "React"]} />
@@ -89,85 +84,99 @@ const LendingPool = () => (
 // --- Main App Component ---
 function App() {
     const [accountId, setAccountId] = useState(null);
-    const [hashConnect, setHashConnect] = useState(null);
-    const [provider, setProvider] = useState(null);
-    const [signer, setSigner] = useState(null);
+    const [signClient, setSignClient] = useState(null);
+    const [modal, setModal] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
     const [page, setPage] = useState('market');
 
+    // This useEffect contains our WORKING WalletConnect initialization logic
     useEffect(() => {
         async function initialize() {
             try {
-                const hc = new HashConnect(true);
-                const appMetadata = { name: "Integro Marketplace", description: "The Trust Layer for Africa's Operations", icon: "" };
-
-                const hcProvider = hc.getProvider("testnet", hc.hcData.pairingData[0]?.topic, accountId);
-                const ethProvider = new ethers.providers.Web3Provider(hcProvider);
-                const ethSigner = ethProvider.getSigner();
-
-                setProvider(ethProvider);
-                setSigner(ethSigner);
-
-                hc.pairingEvent.on(pairingData => {
-                    if (pairingData.accountIds && pairingData.accountIds.length > 0) {
-                        setAccountId(pairingData.accountIds[0]);
-                    }
+                const client = await SignClient.init({
+                    projectId: "2798ba475f686a8e0ec83cc2cceb095b",
+                    metadata: {
+                        name: "Integro Marketplace",
+                        description: "A skill marketplace on Hedera",
+                        url: window.location.origin,
+                        icons: [],
+                    },
                 });
 
-                const initData = await hc.init(appMetadata, "testnet", false);
-                if (initData.savedPairings.length > 0) {
-                    setAccountId(initData.savedPairings[0].accountIds[0]);
+                const wcModal = new WalletConnectModal({
+                    projectId: "2798ba475f686a8e0ec83cc2cceb095b",
+                    chains: ["hedera:testnet"],
+                });
+
+                client.on("session_connect", (event) => {
+                    const connectedAccountId = event.params.namespaces.hedera.accounts[0].split(':')[2];
+                    setAccountId(connectedAccountId);
+                });
+
+                client.on("session_delete", () => {
+                    setAccountId(null);
+                });
+
+                if (client.session.length > 0) {
+                    const lastSession = client.session.get(client.session.keys.at(-1));
+                    const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
+                    setAccountId(existingAccountId);
                 }
-                setHashConnect(hc);
-            } catch (error) { console.error("Initialization failed:", error); }
+
+                setSignClient(client);
+                setModal(wcModal);
+            } catch (error) {
+                console.error("Initialization failed:", error);
+            } finally {
+                setIsLoading(false);
+            }
         }
         initialize();
     }, []);
 
-    const onConnect = () => hashConnect?.connectToLocalWallet();
-    const onDisconnect = async () => {
-        if (hashConnect && hashConnect.hcData.pairingData.length > 0) {
-            await hashConnect.disconnect(hashConnect.hcData.pairingData[0].topic);
-            setAccountId(null);
+    const handleConnect = async () => {
+        if (!signClient || !modal) return;
+        setIsLoading(true);
+        try {
+            const { uri, approval } = await signClient.connect({
+                requiredNamespaces: {
+                    hedera: {
+                        methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"],
+                        chains: ["hedera:testnet"],
+                        events: ["chainChanged", "accountsChanged"],
+                    },
+                },
+            });
+            if (uri) {
+                await modal.openModal({ uri });
+                await approval();
+                modal.closeModal();
+            }
+        } catch (error) {
+            console.error("Connection failed:", error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    const handleCreateTestGig = async () => {
-        if (!signer || !accountId) {
-            alert("Please connect your wallet first.");
-            return;
-        }
-        try {
-            console.log("Getting Escrow contract...");
-            const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
-
-            const sellerAddress = await signer.getAddress(); // For testing, the buyer is also the seller
-            const gigPrice = ethers.utils.parseEther("1.0"); // 1 HBAR
-
-            console.log(`Calling createGig with seller: ${sellerAddress}, price: 1 HBAR`);
-
-            const tx = await escrowContract.createGig(sellerAddress, gigPrice);
-
-            console.log("Transaction sent! Hash:", tx.hash);
-            alert("Transaction sent! Waiting for confirmation...");
-
-            await tx.wait(); // Wait for the transaction to be mined
-
-            console.log("✅ Gig created successfully!");
-            alert("✅ Test Gig created on the Hedera Testnet!");
-
-        } catch (error) {
-            console.error("Failed to create test gig:", error);
-            alert(`Error: ${error.message}`);
+    const handleDisconnect = async () => {
+        if (signClient && signClient.session.length > 0) {
+            const lastSession = signClient.session.get(signClient.session.keys.at(-1));
+            await signClient.disconnect({
+                topic: lastSession.topic,
+                reason: { code: 6000, message: "User disconnected." },
+            });
+            setAccountId(null);
         }
     };
 
     const renderPage = () => {
         switch (page) {
-            case 'market': return <Marketplace onCreateTestGig={handleCreateTestGig} />;
+            case 'market': return <Marketplace />;
             case 'ussd': return <USSDSimulator />;
             case 'agent': return <AgentZone />;
             case 'lending': return <LendingPool />;
-            default: return <Marketplace onCreateTestGig={handleCreateTestGig} />;
+            default: return <Marketplace />;
         }
     };
 
@@ -178,11 +187,13 @@ function App() {
                 <div className="wallet-area">
                     {accountId ? (
                         <div className="connected-state">
-                            <span>{accountId ? `${accountId.slice(0, 4)}...${accountId.slice(-4)}` : ''}</span>
-                            <button onClick={onDisconnect} className="disconnect-btn">Disconnect</button>
+                            <span>{`${accountId.slice(0, 4)}...${accountId.slice(-4)}`}</span>
+                            <button onClick={handleDisconnect} className="disconnect-btn">Disconnect</button>
                         </div>
                     ) : (
-                        <button onClick={onConnect} className="connect-btn">Connect Wallet</button>
+                        <button onClick={handleConnect} className="connect-btn" disabled={isLoading}>
+                            {isLoading ? "🔄 Initializing..." : "🔗 Connect Wallet"}
+                        </button>
                     )}
                 </div>
             </div>
@@ -197,7 +208,6 @@ function App() {
     );
 }
 
-// --- CSS Styles ---
 function CustomStyles() {
     return (
         <style>{`
@@ -209,6 +219,7 @@ function CustomStyles() {
             .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; text-align: center; }
             .wallet-area { margin-top: 15px; }
             .connect-btn { background: var(--hedera-green); color: black; border: none; padding: 10px 20px; border-radius: 10px; font-size: 14px; cursor: pointer; font-weight: 600; width: 100%; }
+            .connect-btn:disabled { background: #ccc; cursor: not-allowed; }
             .connected-state { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 10px; }
             .connected-state span { font-size: 14px; font-family: monospace; }
             .disconnect-btn { background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; }
