@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import './App.css';
 
-// Import the correct libraries
+// Import the correct, native Hedera libraries
 import {
   HederaSessionEvent,
   HederaJsonRpcMethod,
@@ -11,7 +11,8 @@ import {
 import { 
   LedgerId,
   ContractExecuteTransaction,
-  ContractFunctionParameters
+  ContractFunctionParameters,
+  AccountId // Import AccountId for conversion
 } from "@hashgraph/sdk";
 
 // Import our contract address
@@ -65,34 +66,35 @@ function App() {
     if (dAppConnector) await dAppConnector.disconnect();
   };
 
-  // *** THIS IS THE FINAL, ROBUST TRANSACTION FUNCTION ***
   const handleCreateTestGig = async () => {
       if (!dAppConnector || !accountId) return alert("Please connect wallet first.");
       setIsLoading(true);
       setStatus("🚀 Preparing transaction...");
       try {
+          // *** THIS IS THE FINAL FIX ***
+          // The Hedera SDK needs the account ID in a specific format for the smart contract.
+          const sellerAccountId = AccountId.fromString(accountId).toSolidityAddress();
+
           const transaction = new ContractExecuteTransaction()
-              .setContractId(escrowContractAddress.slice(2))
+              // Pass the full, unaltered '0x' address. Do NOT use .slice(2).
+              .setContractId(escrowContractAddress)
               .setGas(150000)
               .setFunction("createGig", new ContractFunctionParameters()
-                  .addAddress(accountId)
-                  .addUint256(1 * 1e8) // 1 HBAR
+                  .addAddress(sellerAccountId)
+                  .addUint256(1 * 1e8) // 1 HBAR (1 * 10^8 tinybar)
               );
           
           setStatus("... Please approve transaction in your wallet ...");
           const result = await dAppConnector.sendTransaction(transaction);
           
-          // *** THIS IS THE FIX ***
-          // 1. Log the raw response so we can see its structure.
-          console.log("Raw Wallet Response:", result);
-
-          // 2. Add a defensive check to prevent the crash.
-          if (result && result.transactionId) {
+          if (result && (result.transactionId || result.receipt)) {
             setStatus("✅ Test Gig successfully created on Hedera!");
-            alert(`Success! Transaction ID: ${result.transactionId}`);
+            alert(`Success! Transaction confirmed.`);
+            console.log("Full Wallet Response:", result);
           } else {
-            setStatus("✅ Transaction sent, but response format is unexpected. Check console log.");
-            alert("Success! Transaction was sent. Please check the console log for the full response.");
+            setStatus("✅ Tx sent, but response format is unexpected. Check console.");
+            alert("Success! Transaction was sent. Check console for the full response.");
+            console.log("Raw Wallet Response:", result);
           }
 
       } catch (error) {
@@ -137,6 +139,19 @@ function App() {
   );
 }
 
-function CustomStyles() { return (<style>{` /* ... CSS from previous version ... */ `}</style>); }
+// Inline CSS from the previous working version
+function CustomStyles() { return (<style>{`
+    .container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); }
+    .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; border-radius: 20px 20px 0 0; }
+    .header h1 { font-family: 'Comfortaa', cursive; font-size: 28px; margin: 0; } .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+    .page-container { padding: 20px; } .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 15px; }
+    .hedera-button { background: #2DD87F; color: black; border: none; padding: 14px; border-radius: 12px; font-size: 16px; cursor: pointer; width: 100%; font-weight: 600; }
+    .hedera-button:disabled { background: #ccc; cursor: not-allowed; }
+    .hedera-button.disconnect { background: #6c757d; color: white; }
+    .status-message { padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center; }
+    .status-info { background: #e3f2fd; color: #1565c0; } .status-success { background: #e8f5e8; color: #2e7d32; } .status-error { background: #ffebee; color: #c62828; }
+    .connected-state { text-align: center; }
+`}</style>); }
+
 function MainApp() { return (<><CustomStyles /><App /></>); }
 export default MainApp;
