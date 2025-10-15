@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import './App.css';
 
-// Import the correct, native Hedera libraries
+// 1. Import the correct, native Hedera libraries
 import {
   HederaSessionEvent,
   HederaJsonRpcMethod,
@@ -70,18 +70,21 @@ function App() {
       if (!dAppConnector || !accountId) return alert("Please connect wallet first.");
       setIsLoading(true);
       setStatus("🚀 Preparing transaction...");
+      
+      // DEBUGGING STEP: Log the address before using it.
+      console.log("Using Contract Address:", escrowContractAddress);
+
       try {
-          // *** THIS IS THE FINAL FIX ***
-          // The Hedera SDK needs the account ID in a specific format for the smart contract.
-          const sellerAccountId = AccountId.fromString(accountId).toSolidityAddress();
+          // FIX 1: Convert Hedera Account ID to Solidity address for the contract parameter.
+          const sellerSolidityAddress = AccountId.fromString(accountId).toSolidityAddress();
 
           const transaction = new ContractExecuteTransaction()
-              // Pass the full, unaltered '0x' address. Do NOT use .slice(2).
+              // FIX 2: Pass the full, unaltered '0x' address to the SDK.
               .setContractId(escrowContractAddress)
               .setGas(150000)
               .setFunction("createGig", new ContractFunctionParameters()
-                  .addAddress(sellerAccountId)
-                  .addUint256(1 * 1e8) // 1 HBAR (1 * 10^8 tinybar)
+                  .addAddress(sellerSolidityAddress)
+                  .addUint256(1 * 1e8) // Price: 1 HBAR (1 * 10^8 tinybar)
               );
           
           setStatus("... Please approve transaction in your wallet ...");
