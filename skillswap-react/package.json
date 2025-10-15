@@ -10,9 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hashgraph/sdk": "^2.74.0",
     "@walletconnect/modal": "^2.7.0",
     "@walletconnect/sign-client": "^2.22.3",
-    "ethers": "^6.15.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
