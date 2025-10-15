@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 
 // 1. Import the CORRECT libraries
-import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId, AccountId } from "@hashgraph/sdk";
+import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId, AccountId, Client } from "@hashgraph/sdk";
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
 
@@ -59,15 +59,19 @@ function App() {
         try {
             const lastSession = signClient.session.get(signClient.session.keys.at(-1));
 
-            // 2. Build the transaction using the Hedera SDK
+            // 2. Build and FREEZE the transaction
+            const client = Client.forTestnet(); // Or Client.forMainnet()
             const sellerEVMAddress = AccountId.fromString(accountId).toSolidityAddress();
             const transaction = new ContractExecuteTransaction()
-                .setContractId(ContractId.fromSolidityAddress(escrowContractAddress)) // CORRECT WAY to parse address
-                .setGas(100000) // Set a gas limit
+                .setContractId(ContractId.fromSolidityAddress(escrowContractAddress))
+                .setGas(100000)
                 .setFunction("createGig", new ContractFunctionParameters()
-                    .addAddress(sellerEVMAddress) // For testing, the buyer is also the seller
-                    .addUint256(1 * 1e8) // Price: 1 HBAR (1 * 10^8 tinybar)
+                    .addAddress(sellerEVMAddress)
+                    .addUint256(1 * 1e8)
                 );
+
+            // This is the CRUCIAL step
+            await transaction.freezeWith(client);
 
             setStatus("... Please approve the transaction in your wallet ...");
 
