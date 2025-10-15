@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 
 // 1. Import the CORRECT libraries
-import { Transaction, ContractExecuteTransaction, ContractFunctionParameters } from "@hashgraph/sdk";
+import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId } from "@hashgraph/sdk";
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
 
@@ -61,7 +61,7 @@ function App() {
 
             // 2. Build the transaction using the Hedera SDK
             const transaction = new ContractExecuteTransaction()
-                .setContractId(escrowContractAddress.slice(2)) // Remove '0x' from address
+                .setContractId(ContractId.fromSolidityAddress(escrowContractAddress)) // CORRECT WAY to parse address
                 .setGas(100000) // Set a gas limit
                 .setFunction("createGig", new ContractFunctionParameters()
                     .addAddress(accountId) // For testing, the buyer is also the seller
