@@ -16,6 +16,7 @@ function App() {
     const [isLoading, setIsLoading] = useState(true);
     const [status, setStatus] = useState("Initializing...");
     const [page, setPage] = useState('market');
+    const [pairingUri, setPairingUri] = useState("");
 
     // This useEffect contains our WORKING WalletConnect initialization logic
     useEffect(() => {
@@ -100,11 +101,14 @@ function App() {
     async function reAddHandleConnect() {
         if (!signClient || !modal) return;
         setIsLoading(true);
+        setPairingUri(""); // Reset on each attempt
         try {
             const { uri, approval } = await signClient.connect({
                 requiredNamespaces: { hedera: { methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"], chains: ["hedera:testnet"], events: ["chainChanged", "accountsChanged"] } },
             });
             if (uri) {
+                console.log("Generated Pairing URI:", uri);
+                setPairingUri(uri); // <-- Add this for debugging
                 await modal.openModal({ uri });
                 await approval();
                 modal.closeModal();
@@ -160,6 +164,17 @@ function App() {
                     )}
                 </div>
             </div>
+
+            {/* --- Temporary Debugging UI --- */}
+            {pairingUri && (
+                <div className="card" style={{ marginTop: '10px', wordBreak: 'break-all' }}>
+                    <h3>Debugging Info</h3>
+                    <p>If the modal doesn't open, please copy this URI and report it:</p>
+                    <code>{pairingUri}</code>
+                </div>
+            )}
+            {/* ----------------------------- */}
+
              <div className="page-container">{renderPage()}</div>
              <div className="nav-bar">
                 <button onClick={() => setPage('market')} className={page === 'market' ? 'active' : ''}><i className="fas fa-store"></i><span>Market</span></button>
