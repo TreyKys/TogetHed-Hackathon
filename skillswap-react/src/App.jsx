@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 
 // 1. Import the CORRECT libraries
-import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId, AccountId, Client } from "@hashgraph/sdk";
+import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId, AccountId, TransactionId } from "@hashgraph/sdk";
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
 
@@ -59,10 +59,13 @@ function App() {
         try {
             const lastSession = signClient.session.get(signClient.session.keys.at(-1));
 
-            // 2. Build and FREEZE the transaction
-            const client = Client.forTestnet(); // Or Client.forMainnet()
+            // 2. Manually "Freeze" the transaction for signing
             const sellerEVMAddress = AccountId.fromString(accountId).toSolidityAddress();
             const transaction = new ContractExecuteTransaction()
+                // Set the manual transaction ID
+                .setTransactionId(TransactionId.generate(accountId))
+                // Set the node account IDs
+                .setNodeAccountIds([new AccountId(3)]) // Testnet node 0.0.3
                 .setContractId(ContractId.fromSolidityAddress(escrowContractAddress))
                 .setGas(100000)
                 .setFunction("createGig", new ContractFunctionParameters()
@@ -70,10 +73,7 @@ function App() {
                     .addUint256(1 * 1e8)
                 );
 
-            // This is the CRUCIAL step
-            await transaction.freezeWith(client);
-
-            setStatus("... Please approve the transaction in your wallet ...");
+             setStatus("... Please approve the transaction in your wallet ...");
 
             // 3. Send the transaction to the wallet for signing and execution
             const result = await signClient.request({
