@@ -1,188 +1,142 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
 import './App.css';
 
-// 1. Import the CORRECT libraries
-import { Transaction, ContractExecuteTransaction, ContractFunctionParameters, ContractId, AccountId, TransactionId } from "@hashgraph/sdk";
-import SignClient from "@walletconnect/sign-client";
-import { WalletConnectModal } from "@walletconnect/modal";
+// Import the correct libraries
+import {
+  HederaSessionEvent,
+  HederaJsonRpcMethod,
+  DAppConnector,
+  HederaChainId,
+} from "@hashgraph/hedera-wallet-connect";
+import { 
+  LedgerId,
+  ContractExecuteTransaction,
+  ContractFunctionParameters
+} from "@hashgraph/sdk";
 
-// Import our Hedera configuration file
-import { escrowContractAddress } from './hedera.js';
-import { isMobile } from './utils.js';
+// Import our contract address
+import { escrowContractAddress } from "./hedera.js";
+
+const projectId = "2798ba475f686a8e0ec83cc2cceb095b";
 
 function App() {
-    const [accountId, setAccountId] = useState(null);
-    const [signClient, setSignClient] =useState(null);
-    const [modal, setModal] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [status, setStatus] = useState("Initializing...");
-    const [page, setPage] = useState('market');
+  const [accountId, setAccountId] = useState(null);
+  const [dAppConnector, setDAppConnector] = useState(null);
+  const [status, setStatus] = useState("Initializing Connector...");
+  const [isLoading, setIsLoading] = useState(false);
 
-    // This useEffect contains our WORKING WalletConnect initialization logic
-    useEffect(() => {
-        async function initialize() {
-            try {
-                const client = await SignClient.init({
-                    projectId: "2798ba475f686a8e0ec83cc2cceb095b",
-                    metadata: { name: "Integro Marketplace", url: window.location.origin, icons: [] },
-                });
-                const wcModal = new WalletConnectModal({ projectId: "2798ba475f686a8e0ec83cc2cceb095b", chains: ["hedera:testnet"] });
+  useEffect(() => {
+    async function initialize() {
+      try {
+        const metadata = { name: "Integro Marketplace", description: "A skill marketplace on Hedera", url: window.location.origin, icons: [] };
+        const connector = new DAppConnector( metadata, LedgerId.Testnet, projectId, Object.values(HederaJsonRpcMethod), [HederaSessionEvent.AccountsChanged], [HederaChainId.Testnet] );
+        await connector.init({ logger: "error" });
 
-                client.on("session_connect", (event) => {
-                    const connectedAccountId = event.params.namespaces.hedera.accounts[0].split(':')[2];
-                    setAccountId(connectedAccountId);
-                    setStatus("✅ Wallet Connected & Ready!");
-                });
-                client.on("session_delete", () => { setAccountId(null); });
-
-                if (client.session.length > 0) {
-                    const lastSession = client.session.get(client.session.keys.at(-1));
-                    const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
-                    setAccountId(existingAccountId);
-                }
-                setSignClient(client);
-                setModal(wcModal);
-            } catch (error) { console.error("Initialization failed:", error); setStatus("❌ Initialization Failed");
-            } finally { setIsLoading(false); }
+        connector.on(HederaSessionEvent.AccountsChanged, (accounts) => {
+          if (accounts && accounts.length > 0) {
+            setAccountId(accounts[0]);
+            setStatus("✅ Wallet Connected!");
+          } else {
+            setAccountId(null);
+            setStatus("Disconnected.");
+          }
+        });
+        
+        setDAppConnector(connector);
+        if (connector.accounts && connector.accounts.length > 0) {
+            setAccountId(connector.accounts[0]);
+            setStatus("✅ Restored previous connection!");
+        } else {
+            setStatus("Ready to connect.");
         }
-        initialize();
-    }, []);
+      } catch (error) {
+        console.error("Initialization failed:", error);
+        setStatus(`❌ Error: ${error.message}`);
+      }
+    }
+    initialize();
+  }, []);
 
-    const handleConnect = async () => { /* This function remains the same */ };
-    const handleDisconnect = async () => { /* This function remains the same */ };
+  const onConnect = async () => {
+    if (dAppConnector) await dAppConnector.openModal();
+  };
 
-    // *** THIS IS THE FINAL FIX ***
-    // This function is now rewritten to use the native Hedera SDK (@hashgraph/sdk)
-    const handleCreateTestGig = async () => {
-        if (!signClient || !accountId) return alert("Please connect your wallet first.");
-        setStatus("🚀 Preparing transaction...");
+  const onDisconnect = async () => {
+    if (dAppConnector) await dAppConnector.disconnect();
+  };
 
-        try {
-            const lastSession = signClient.session.get(signClient.session.keys.at(-1));
+  // *** THIS IS THE FINAL, ROBUST TRANSACTION FUNCTION ***
+  const handleCreateTestGig = async () => {
+      if (!dAppConnector || !accountId) return alert("Please connect wallet first.");
+      setIsLoading(true);
+      setStatus("🚀 Preparing transaction...");
+      try {
+          const transaction = new ContractExecuteTransaction()
+              .setContractId(escrowContractAddress.slice(2))
+              .setGas(150000)
+              .setFunction("createGig", new ContractFunctionParameters()
+                  .addAddress(accountId)
+                  .addUint256(1 * 1e8) // 1 HBAR
+              );
+          
+          setStatus("... Please approve transaction in your wallet ...");
+          const result = await dAppConnector.sendTransaction(transaction);
+          
+          // *** THIS IS THE FIX ***
+          // 1. Log the raw response so we can see its structure.
+          console.log("Raw Wallet Response:", result);
 
-            // 2. Manually "Freeze" the transaction for signing
-            const sellerEVMAddress = AccountId.fromString(accountId).toSolidityAddress();
-            const transaction = new ContractExecuteTransaction()
-                // Set the manual transaction ID
-                .setTransactionId(TransactionId.generate(accountId))
-                // Set the node account IDs
-                .setNodeAccountIds([new AccountId(3)]) // Testnet node 0.0.3
-                .setContractId(ContractId.fromSolidityAddress(escrowContractAddress))
-                .setGas(100000)
-                .setFunction("createGig", new ContractFunctionParameters()
-                    .addAddress(sellerEVMAddress)
-                    .addUint256(1 * 1e8)
-                );
-
-             setStatus("... Please approve the transaction in your wallet ...");
-
-            // 3. Send the transaction to the wallet for signing and execution
-            const result = await signClient.request({
-                topic: lastSession.topic,
-                chainId: "hedera:testnet",
-                request: {
-                    method: "hedera_signAndExecuteTransaction",
-                    params: [transaction.toBytes()],
-                },
-            });
-
+          // 2. Add a defensive check to prevent the crash.
+          if (result && result.transactionId) {
             setStatus("✅ Test Gig successfully created on Hedera!");
             alert(`Success! Transaction ID: ${result.transactionId}`);
-            console.log("Transaction Result:", result);
+          } else {
+            setStatus("✅ Transaction sent, but response format is unexpected. Check console log.");
+            alert("Success! Transaction was sent. Please check the console log for the full response.");
+          }
 
-        } catch (error) {
-            console.error("Failed to create test gig:", error);
-            setStatus(`❌ Error: ${error.message}`);
-            alert(`Error: ${error.message}`);
-        }
-    };
+      } catch (error) {
+          console.error("Transaction failed:", error);
+          setStatus(`❌ Error: ${error.message}`);
+          alert(`Error: ${error.message}`);
+      } finally {
+          setIsLoading(false);
+      }
+  };
 
-    // Re-add the handleConnect and handleDisconnect functions here
-    async function reAddHandleConnect() {
-        if (!signClient || !modal) return;
-        setIsLoading(true);
-        try {
-            const { uri, approval } = await signClient.connect({
-                requiredNamespaces: { hedera: { methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"], chains: ["hedera:testnet"], events: ["chainChanged", "accountsChanged"] } },
-            });
-
-            if (uri) {
-                if (isMobile()) {
-                    const deepLink = `hashpack://wc?uri=${encodeURIComponent(uri)}`;
-                    window.location.href = deepLink;
-                } else {
-                    await modal.openModal({ uri });
-                }
-                await approval();
-                modal.closeModal();
-            }
-        } catch (error) {
-            console.error("Connection failed:", error);
-            setStatus("❌ Connection Failed");
-        } finally {
-            setIsLoading(false);
-        }
-    }
-    async function reAddHandleDisconnect() {
-        if (signClient && signClient.session.length > 0) {
-            const lastSession = signClient.session.get(signClient.session.keys.at(-1));
-            await signClient.disconnect({ topic: lastSession.topic, reason: { code: 6000, message: "User disconnected." } });
-        }
-    }
-
-    // --- Full UI Skeletons ---
-    const Marketplace = () => { /* ... UI code ... */ };
-    const USSDSimulator = () => { /* ... UI code ... */ };
-    const AgentZone = () => { /* ... UI code ... */ };
-    const LendingPool = () => { /* ... UI code ... */ };
-
-    const renderPage = () => {
-        // Add the test button directly to the marketplace for now
-        if (page === 'market') return (
-            <div>
-                <div className="card">
-                    <h3>On-Chain Test</h3>
-                    <p>This will send a real transaction to our Escrow smart contract.</p>
-                    <button onClick={handleCreateTestGig} className="hedera-button">
-                        <i className="fas fa-vial"></i> Create Test Gig
-                    </button>
-                </div>
-                <Marketplace />
+  return (
+    <div className="container">
+      <div className="header"><h1>Integro</h1><p>Powered by Hedera</p></div>
+      <div className="page-container">
+        <div className="card">
+          <h3>Wallet Connection & Test</h3>
+          <div className={`status-message ${accountId ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
+            {accountId ? `Connected as: ${accountId}` : status}
+          </div>
+          {accountId ? (
+            <div className="connected-state">
+              <button onClick={onDisconnect} className="hedera-button disconnect">Disconnect</button>
             </div>
-        );
-        // ... other cases ...
-    };
-
-    return (
-        <div className="container">
-            <div className="header">
-                 <h1>Integro</h1><p>Powered by Hedera</p>
-                <div className="wallet-area">
-                    {accountId ? (
-                        <div className="connected-state">
-                            <span>{`${accountId.slice(0, 4)}...${accountId.slice(-4)}`}</span>
-                            <button onClick={reAddHandleDisconnect} className="disconnect-btn">Disconnect</button>
-                        </div>
-                    ) : (
-                        <button onClick={reAddHandleConnect} className="connect-btn" disabled={isLoading}>
-                            {isLoading ? "🔄 Initializing..." : "🔗 Connect Wallet"}
-                        </button>
-                    )}
-                </div>
-            </div>
-
-             <div className="page-container">{renderPage()}</div>
-             <div className="nav-bar">
-                <button onClick={() => setPage('market')} className={page === 'market' ? 'active' : ''}><i className="fas fa-store"></i><span>Market</span></button>
-                <button onClick={() => setPage('ussd')} className={page === 'ussd' ? 'active' : ''}><i className="fas fa-mobile-alt"></i><span>USSD</span></button>
-                <button onClick={() => setPage('agent')} className={page === 'agent' ? 'active' : ''}><i className="fas fa-user-shield"></i><span>Agent</span></button>
-                <button onClick={() => setPage('lending')} className={page === 'lending' ? 'active' : ''}><i className="fas fa-hand-holding-usd"></i><span>Lending</span></button>
-            </div>
+          ) : (
+            <button onClick={onConnect} className="hedera-button" disabled={isLoading}>
+              {isLoading ? "🔄 Initializing..." : "🔗 Connect Wallet"}
+            </button>
+          )}
         </div>
-    );
+        {accountId && (
+          <div className="card">
+            <h3>On-Chain Test</h3>
+            <p>This will send a real transaction to our Escrow smart contract.</p>
+            <button onClick={handleCreateTestGig} className="hedera-button" disabled={isLoading}>
+              {isLoading ? "🔄 Processing..." : "Create Test Gig (1 HBAR)"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// All other components and styles remain the same
-function CustomStyles() { /* ... same as before ... */ }
+function CustomStyles() { return (<style>{` /* ... CSS from previous version ... */ `}</style>); }
 function MainApp() { return (<><CustomStyles /><App /></>); }
 export default MainApp;
