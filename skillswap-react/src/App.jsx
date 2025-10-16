@@ -125,7 +125,7 @@ function App() {
     }
   };
 
-  // *** FIXED TRANSACTION FUNCTION - REMOVED FREEZE WITH ***
+  // *** COMPREHENSIVE ERROR HANDLING VERSION ***
   const handleCreateTestGig = async () => {
     if (!signClient || !accountId) {
       alert("Please connect wallet first.");
@@ -133,89 +133,165 @@ function App() {
     }
 
     setIsTransactionLoading(true);
-    setStatus("🚀 Preparing transaction...");
+    setStatus("🚀 Starting transaction...");
     
     try {
-      // Step 1: Get the active session
+      // Step 1: Get the active session with validation
       const sessionKeys = Array.from(signClient.session.keys);
-      if (sessionKeys.length === 0) {
-        throw new Error("No active session found");
-      }
-      const session = signClient.session.get(sessionKeys[0]);
+      console.log("Session keys:", sessionKeys);
       
-      // Step 2: Prepare contract ID (handle both string and object formats)
+      if (sessionKeys.length === 0) {
+        throw new Error("No active session found. Please reconnect your wallet.");
+      }
+      
+      const session = signClient.session.get(sessionKeys[0]);
+      console.log("Active session:", session);
+      
+      if (!session || !session.topic) {
+        throw new Error("Invalid session. Please reconnect your wallet.");
+      }
+
+      setStatus("📝 Validating contract address...");
+
+      // Step 2: Prepare contract ID with detailed validation
       let contractId;
+      let contractAddressString;
+      
       if (typeof escrowContractAddress === 'string') {
-        if (escrowContractAddress.startsWith('0x')) {
-          // EVM address - remove 0x prefix
-          const addressWithoutPrefix = escrowContractAddress.slice(2);
+        contractAddressString = escrowContractAddress;
+        console.log("Contract address (string):", contractAddressString);
+        
+        if (contractAddressString.startsWith('0x')) {
+          const addressWithoutPrefix = contractAddressString.slice(2);
+          console.log("EVM address without prefix:", addressWithoutPrefix);
+          
           if (addressWithoutPrefix.length !== 40) {
-            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} (expected 40)`);
+            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} characters (expected 40)`);
           }
+          
           contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
-        } else if (escrowContractAddress.startsWith('0.0.')) {
-          // Native Hedera format
-          contractId = ContractId.fromString(escrowContractAddress);
+          console.log("Created ContractId from EVM address:", contractId.toString());
+        } else if (contractAddressString.startsWith('0.0.')) {
+          contractId = ContractId.fromString(contractAddressString);
+          console.log("Created ContractId from Hedera format:", contractId.toString());
         } else {
-          throw new Error("Invalid contract address format");
+          throw new Error(`Invalid contract address format: "${contractAddressString}". Must start with 0x (EVM) or 0.0. (Hedera)`);
         }
       } else {
-        // Already a ContractId object
         contractId = escrowContractAddress;
+        contractAddressString = contractId.toString();
+        console.log("ContractId object:", contractAddressString);
       }
 
-      // Step 3: Convert user account to EVM address for contract call
+      // Step 3: Convert user account to EVM address
+      console.log("User account ID:", accountId);
       const userAccountId = AccountId.fromString(accountId);
       const userEvmAddress = userAccountId.toSolidityAddress();
+      console.log("User EVM address:", userEvmAddress);
 
-      // Validate EVM address length
       if (userEvmAddress.length !== 40) {
-        throw new Error(`Invalid user EVM address length: ${userEvmAddress.length} (expected 40)`);
+        throw new Error(`Invalid user EVM address: "${userEvmAddress}" (length: ${userEvmAddress.length}, expected 40)`);
       }
 
-      setStatus("📝 Building transaction...");
+      setStatus("🔨 Building transaction...");
 
-      // Step 4: Create the transaction WITHOUT FREEZE - WalletConnect handles this
+      // Step 4: Create the transaction
       const transaction = new ContractExecuteTransaction()
         .setContractId(contractId)
-        .setGas(500000) // Increased gas for safety
-        .setMaxTransactionFee(new Hbar(5)) // Increased fee
+        .setGas(1000000) // Very generous gas
+        .setMaxTransactionFee(new Hbar(10)) // Generous fee
         .setFunction("createGig", new ContractFunctionParameters()
-          .addAddress(userEvmAddress) // 40-character EVM address
+          .addAddress(userEvmAddress)
           .addUint256(100000000) // 1 HBAR in tinybars
         );
-        // REMOVED: .freezeWith(null) - WalletConnect handles freezing
+
+      console.log("Transaction built:", transaction);
+
+      setStatus("📤 Converting to bytes...");
+
+      // Step 5: Convert to bytes
+      const transactionBytes = await transaction.toBytes();
+      console.log("Transaction bytes length:", transactionBytes.length);
 
       setStatus("⏳ Sending to HashPack...");
 
-      // Step 5: Send transaction through WalletConnect
-      const result = await signClient.request({
+      // Step 6: Send through WalletConnect with timeout
+      const requestPromise = signClient.request({
         topic: session.topic,
         chainId: "hedera:testnet",
         request: {
           method: "hedera_signAndExecuteTransaction",
           params: {
-            transaction: await transaction.toBytes()
+            transaction: transactionBytes
           }
         }
       });
 
-      // Step 6: Handle the response
-      if (result && result.transactionId) {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout - wallet didn't respond")), 30000);
+      });
+
+      const result = await Promise.race([requestPromise, timeoutPromise]);
+      console.log("Wallet response:", result);
+
+      // Step 7: Handle response
+      if (!result) {
+        throw new Error("No response received from wallet");
+      }
+
+      if (result.transactionId) {
         setStatus("✅ Test Gig created successfully!");
         alert(`🎉 Success! Transaction ID: ${result.transactionId}`);
-      } else if (result && result.id) {
+      } else if (result.id) {
         setStatus("✅ Transaction submitted!");
         alert(`Transaction submitted! ID: ${result.id}`);
-      } else {
+      } else if (result.hash) {
         setStatus("✅ Transaction submitted!");
-        alert("Transaction submitted successfully!");
+        alert(`Transaction submitted! Hash: ${result.hash}`);
+      } else {
+        setStatus("✅ Transaction sent to network!");
+        alert("Transaction submitted! Please check your wallet for confirmation.");
       }
 
     } catch (error) {
-      console.error("Transaction error:", error);
-      setStatus(`❌ Transaction failed: ${error.message}`);
-      alert(`Error: ${error.message}`);
+      // COMPREHENSIVE ERROR HANDLING
+      console.error("FULL TRANSACTION ERROR:", error);
+      
+      let errorMessage = "Unknown error occurred";
+      
+      if (error && typeof error === 'object') {
+        // Handle different error types
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.code) {
+          errorMessage = `Error code: ${error.code}`;
+        } else if (error.name) {
+          errorMessage = `Error: ${error.name}`;
+        } else {
+          errorMessage = JSON.stringify(error);
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      console.log("Processed error message:", errorMessage);
+      
+      // User-friendly error messages
+      if (errorMessage.includes("rejected") || errorMessage.includes("denied")) {
+        errorMessage = "Transaction was rejected in HashPack";
+      } else if (errorMessage.includes("timeout")) {
+        errorMessage = "Wallet didn't respond. Please try again.";
+      } else if (errorMessage.includes("session") || errorMessage.includes("topic")) {
+        errorMessage = "Wallet session issue. Please reconnect your wallet.";
+      } else if (errorMessage.includes("insufficient")) {
+        errorMessage = "Insufficient balance for transaction";
+      } else if (errorMessage.includes("contract") || errorMessage.includes("address")) {
+        errorMessage = `Contract issue: ${errorMessage}`;
+      }
+      
+      setStatus(`❌ ${errorMessage}`);
+      alert(`❌ ${errorMessage}`);
     } finally {
       setIsTransactionLoading(false);
     }
@@ -263,8 +339,8 @@ function App() {
             >
               {isTransactionLoading ? "🔄 Processing..." : "Create Test Gig (1 HBAR)"}
             </button>
-            <div style={{marginTop: '10px', fontSize: '12px', color: '#666'}}>
-              Make sure your wallet has testnet HBAR
+            <div style={{marginTop: '10px', fontSize: '12px', color: '#666', textAlign: 'center'}}>
+              ⚠️ Make sure your wallet has testnet HBAR
             </div>
           </div>
         )}
