@@ -8,7 +8,7 @@ import {
   ContractExecuteTransaction,
   ContractFunctionParameters,
   ContractId,
-  AccountId  // Added for address conversion
+  AccountId
 } from "@hashgraph/sdk";
 
 // Import our contract address
@@ -20,8 +20,10 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [status, setStatus] = useState("Initializing WalletConnect...");
   const [isLoading, setIsLoading] = useState(true);
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const [signClient, setSignClient] = useState(null);
   const [modal, setModal] = useState(null);
+  const [currentSession, setCurrentSession] = useState(null);
 
   // Initialize our WORKING WalletConnect solution
   useEffect(() => {
@@ -33,7 +35,7 @@ function App() {
             name: "Integro Marketplace",
             description: "A skill marketplace on Hedera",
             url: window.location.origin,
-            icons: [],
+            icons: ["https://cdn.hashpack.app/img/logo.png"],
           },
         });
         
@@ -42,19 +44,44 @@ function App() {
           chains: ["hedera:testnet"],
         });
 
-        // Set up event listener for successful connection
+        // Set up event listeners for session management
         client.on("session_connect", (event) => {
+          console.log("🔗 Session connected:", event);
           const connectedAccountId = event.params.namespaces.hedera.accounts[0].split(':')[2];
           setAccountId(connectedAccountId);
+          setCurrentSession(event);
           setStatus(`✅ Connected as: ${connectedAccountId}`);
+        });
+
+        client.on("session_delete", (event) => {
+          console.log("🔗 Session deleted:", event);
+          setAccountId(null);
+          setCurrentSession(null);
+          setStatus("Disconnected");
+        });
+
+        client.on("session_event", (event) => {
+          console.log("🔗 Session event:", event);
+        });
+
+        client.on("session_request", (event) => {
+          console.log("🔗 Session request:", event);
         });
 
         // Check for existing sessions
         if (client.session.length > 0) {
-          const lastSession = client.session.get(client.session.keys.at(-1));
-          const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
-          setAccountId(existingAccountId);
-          setStatus(`✅ Connected as: ${existingAccountId}`);
+          const sessionKeys = Array.from(client.session.keys);
+          const lastSessionKey = sessionKeys[sessionKeys.length - 1];
+          const lastSession = client.session.get(lastSessionKey);
+          
+          console.log("🔗 Found existing session:", lastSession);
+          
+          if (lastSession && lastSession.namespaces.hedera && lastSession.namespaces.hedera.accounts.length > 0) {
+            const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
+            setAccountId(existingAccountId);
+            setCurrentSession(lastSession);
+            setStatus(`✅ Connected as: ${existingAccountId}`);
+          }
         }
 
         setSignClient(client);
@@ -63,8 +90,8 @@ function App() {
         setIsLoading(false);
 
       } catch (error) {
-        console.error("Initialization failed:", error);
-        setStatus("❌ Initialization Failed");
+        console.error("❌ Initialization failed:", error);
+        setStatus(`❌ Initialization Failed: ${error.message}`);
         setIsLoading(false);
       }
     }
@@ -92,116 +119,163 @@ function App() {
       });
 
       if (uri) {
-        setStatus("✅ URI generated! Please scan with HashPack.");
+        setStatus("✅ URI generated! Opening HashPack...");
         await modal.openModal({ uri });
-        await approval();
+        
+        // Wait for user approval
+        setStatus("⏳ Waiting for approval in HashPack...");
+        const session = await approval();
+        
+        console.log("✅ Session approved:", session);
+        
+        if (session && session.namespaces.hedera.accounts.length > 0) {
+          const connectedAccountId = session.namespaces.hedera.accounts[0].split(':')[2];
+          setAccountId(connectedAccountId);
+          setCurrentSession(session);
+          setStatus(`✅ Connected as: ${connectedAccountId}`);
+        }
+        
         modal.closeModal();
       }
     } catch (error) {
-      console.error("Connection failed:", error);
-      setStatus("❌ Connection Failed or Rejected.");
+      console.error("❌ Connection failed:", error);
+      setStatus(`❌ Connection Failed: ${error.message || "User rejected or connection failed"}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (signClient && signClient.session.length > 0) {
-      const lastSession = signClient.session.get(signClient.session.keys.at(-1));
-      await signClient.disconnect({
-        topic: lastSession.topic,
-        reason: { code: 6000, message: "User disconnected." },
-      });
-      setAccountId(null);
-      setStatus("Ready to connect");
+    if (signClient && currentSession) {
+      try {
+        await signClient.disconnect({
+          topic: currentSession.topic,
+          reason: { code: 6000, message: "User disconnected" },
+        });
+        setAccountId(null);
+        setCurrentSession(null);
+        setStatus("Disconnected");
+      } catch (error) {
+        console.error("❌ Disconnect error:", error);
+        setStatus(`❌ Disconnect error: ${error.message}`);
+      }
     }
   };
 
-  // *** FIXED TRANSACTION FUNCTION WITH PROPER CONTRACT ID HANDLING ***
+  // *** FIXED TRANSACTION FUNCTION WITH PROPER SESSION HANDLING ***
   const handleCreateTestGig = async () => {
-    if (!signClient || !accountId) {
-      alert("Please connect wallet first.");
+    if (!signClient || !accountId || !currentSession) {
+      alert("❌ Please connect wallet first and ensure session is active.");
       return;
     }
 
-    setIsLoading(true);
+    setIsTransactionLoading(true);
     setStatus("🚀 Preparing transaction...");
     
     try {
-      // OPTION 1: If escrowContractAddress is a ContractId object
+      // Convert contract address properly
       let contractId;
       
       if (typeof escrowContractAddress === 'string') {
-        // It's a string - check if it's EVM format or Hedera format
         if (escrowContractAddress.startsWith('0x')) {
-          // EVM address - convert to ContractId
           const addressWithoutPrefix = escrowContractAddress.slice(2);
           if (addressWithoutPrefix.length !== 40) {
-            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} (expected 40 characters)`);
+            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} chars`);
           }
           contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
         } else if (escrowContractAddress.startsWith('0.0.')) {
-          // Native Hedera format
           contractId = ContractId.fromString(escrowContractAddress);
         } else {
           throw new Error(`Invalid contract address format: ${escrowContractAddress}`);
         }
       } else {
-        // It's already a ContractId object
         contractId = escrowContractAddress;
       }
 
-      // Convert user account ID to EVM address for the contract call
+      // Convert user account to EVM address
       const userAccountId = AccountId.fromString(accountId);
       const userEvmAddress = userAccountId.toSolidityAddress();
       
-      // Verify the EVM address is correct length (40 chars without 0x)
       if (userEvmAddress.length !== 40) {
-        throw new Error(`Invalid user EVM address length: ${userEvmAddress.length} (expected 40 characters)`);
+        throw new Error(`Invalid user EVM address: ${userEvmAddress}`);
       }
 
-      console.log("Contract ID:", contractId.toString());
-      console.log("User EVM Address:", userEvmAddress);
+      console.log("📝 Transaction details:", {
+        contractId: contractId.toString(),
+        userEvmAddress,
+        accountId
+      });
 
+      // Build transaction
       const transaction = new ContractExecuteTransaction()
         .setContractId(contractId)
-        .setGas(300000) // Increased gas for safety
+        .setGas(300000)
         .setFunction("createGig", new ContractFunctionParameters()
-          .addAddress(userEvmAddress) // Use the 40-character EVM address
+          .addAddress(userEvmAddress)
           .addUint256(1 * 1e8) // 1 HBAR
         );
 
-      setStatus("📝 Please approve transaction in your wallet...");
+      setStatus("📝 Please approve transaction in HashPack...");
 
-      // Get current session
-      const session = signClient.session.get(signClient.session.keys[0]);
+      // Get the transaction bytes
+      const transactionBytes = await transaction.toBytes();
       
-      // Send transaction through WalletConnect
+      console.log("🔗 Sending transaction with session:", currentSession.topic);
+
+      // Send transaction through WalletConnect with proper error handling
       const result = await signClient.request({
-        topic: session.topic,
+        topic: currentSession.topic,
         chainId: "hedera:testnet",
         request: {
           method: "hedera_signAndExecuteTransaction",
           params: {
-            transaction: await transaction.toBytes()
+            transaction: transactionBytes,
+            // Add any additional required parameters
           }
         }
       });
 
-      if (result && result.transactionId) {
+      console.log("📨 Transaction response:", result);
+
+      // Handle different response formats
+      if (!result) {
+        throw new Error("No response received from wallet");
+      }
+
+      if (result.transactionId) {
         setStatus("✅ Test Gig successfully created on Hedera!");
-        alert(`Success! Transaction ID: ${result.transactionId}`);
+        alert(`🎉 Success! Transaction ID: ${result.transactionId}`);
+      } else if (result.id) {
+        setStatus("✅ Transaction submitted! Waiting for confirmation...");
+        alert(`✅ Transaction submitted! ID: ${result.id}`);
+      } else if (result.hash) {
+        setStatus("✅ Transaction submitted! Waiting for confirmation...");
+        alert(`✅ Transaction submitted! Hash: ${result.hash}`);
       } else {
-        setStatus("✅ Transaction sent! Check wallet for confirmation.");
-        alert("Transaction submitted successfully!");
+        // If we get here but no error, the transaction might still be successful
+        setStatus("✅ Transaction sent - check HashPack for confirmation");
+        alert("✅ Transaction sent successfully! Please check HashPack for confirmation.");
       }
 
     } catch (error) {
       console.error("❌ Transaction failed:", error);
-      setStatus(`❌ Error: ${error.message}`);
-      alert(`Error: ${error.message}`);
+      console.error("❌ Full error object:", JSON.stringify(error, null, 2));
+      
+      let errorMessage = error.message || "Unknown error occurred";
+      
+      // Provide more user-friendly error messages
+      if (errorMessage.includes("rejected")) {
+        errorMessage = "Transaction was rejected in HashPack";
+      } else if (errorMessage.includes("timeout")) {
+        errorMessage = "Transaction timed out. Please try again.";
+      } else if (errorMessage.includes("session") || errorMessage.includes("topic")) {
+        errorMessage = "Wallet session issue. Please reconnect your wallet.";
+      }
+      
+      setStatus(`❌ ${errorMessage}`);
+      alert(`❌ Error: ${errorMessage}`);
     } finally {
-      setIsLoading(false);
+      setIsTransactionLoading(false);
     }
   };
 
@@ -217,6 +291,7 @@ function App() {
           <h3>Wallet Connection & Test</h3>
           <div className={`status-message ${accountId ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
             {accountId ? `Connected as: ${accountId}` : status}
+            {currentSession && <div style={{fontSize: '12px', opacity: 0.7}}>Session Active</div>}
           </div>
           
           {accountId ? (
@@ -234,9 +309,18 @@ function App() {
           <div className="card">
             <h3>On-Chain Test</h3>
             <p>This will send a real transaction to our Escrow smart contract.</p>
-            <button onClick={handleCreateTestGig} className="hedera-button" disabled={isLoading}>
-              {isLoading ? "🔄 Processing..." : "Create Test Gig (1 HBAR)"}
+            <button 
+              onClick={handleCreateTestGig} 
+              className="hedera-button" 
+              disabled={isTransactionLoading || !currentSession}
+            >
+              {isTransactionLoading ? "🔄 Processing..." : "Create Test Gig (1 HBAR)"}
             </button>
+            {!currentSession && (
+              <div style={{color: 'orange', fontSize: '14px', marginTop: '10px'}}>
+                ⚠️ Session not ready. Please try reconnecting.
+              </div>
+            )}
           </div>
         )}
       </div>
