@@ -1,9 +1,19 @@
 import { useEffect, useState } from "react";
 import './App.css';
 
-// Our working WalletConnect imports
+// Our working WalletConnect imports + transaction imports
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
+import { 
+  ContractExecuteTransaction,
+  ContractFunctionParameters,
+  ContractId,
+  AccountId,
+  Hbar
+} from "@hashgraph/sdk";
+
+// Import our contract address
+import { escrowContractAddress } from "./hedera.js";
 
 const projectId = "2798ba475f686a8e0ec83cc2cceb095b";
 
@@ -11,6 +21,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [status, setStatus] = useState("Initializing WalletConnect...");
   const [isLoading, setIsLoading] = useState(true);
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const [signClient, setSignClient] = useState(null);
   const [modal, setModal] = useState(null);
 
@@ -22,7 +33,7 @@ function App() {
         const client = await SignClient.init({
           projectId: projectId,
           metadata: {
-            name: "SkillSwap Marketplace",
+            name: "Integro Marketplace",
             description: "A skill marketplace on Hedera",
             url: window.location.origin,
             icons: [],
@@ -114,9 +125,89 @@ function App() {
     }
   };
 
-  // SIMPLE TEST BUTTON - No transaction logic yet
-  const handleTestButton = () => {
-    alert("Wallet connection is working! Transaction functionality will be added next.");
+  // *** NEW: CAREFULLY ADDED TRANSACTION FUNCTION ***
+  const handleCreateTestGig = async () => {
+    if (!signClient || !accountId) {
+      alert("Please connect wallet first.");
+      return;
+    }
+
+    setIsTransactionLoading(true);
+    setStatus("🚀 Preparing transaction...");
+    
+    try {
+      // Step 1: Get the active session
+      const sessionKeys = Array.from(signClient.session.keys);
+      if (sessionKeys.length === 0) {
+        throw new Error("No active session found");
+      }
+      const session = signClient.session.get(sessionKeys[0]);
+      
+      // Step 2: Prepare contract ID (handle both string and object formats)
+      let contractId;
+      if (typeof escrowContractAddress === 'string') {
+        if (escrowContractAddress.startsWith('0x')) {
+          // EVM address - remove 0x prefix
+          const addressWithoutPrefix = escrowContractAddress.slice(2);
+          contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
+        } else if (escrowContractAddress.startsWith('0.0.')) {
+          // Native Hedera format
+          contractId = ContractId.fromString(escrowContractAddress);
+        } else {
+          throw new Error("Invalid contract address format");
+        }
+      } else {
+        // Already a ContractId object
+        contractId = escrowContractAddress;
+      }
+
+      // Step 3: Convert user account to EVM address for contract call
+      const userAccountId = AccountId.fromString(accountId);
+      const userEvmAddress = userAccountId.toSolidityAddress();
+
+      setStatus("📝 Building transaction...");
+
+      // Step 4: Create the transaction
+      const transaction = await new ContractExecuteTransaction()
+        .setContractId(contractId)
+        .setGas(300000) // Sufficient gas
+        .setMaxTransactionFee(new Hbar(2)) // Set reasonable fee
+        .setFunction("createGig", new ContractFunctionParameters()
+          .addAddress(userEvmAddress) // 40-character EVM address
+          .addUint256(100000000) // 1 HBAR in tinybars
+        )
+        .freezeWith(null); // Freeze transaction
+
+      setStatus("⏳ Sending to HashPack...");
+
+      // Step 5: Send transaction through WalletConnect
+      const result = await signClient.request({
+        topic: session.topic,
+        chainId: "hedera:testnet",
+        request: {
+          method: "hedera_signAndExecuteTransaction",
+          params: {
+            transaction: await transaction.toBytes()
+          }
+        }
+      });
+
+      // Step 6: Handle the response
+      if (result && result.transactionId) {
+        setStatus("✅ Test Gig created successfully!");
+        alert(`🎉 Success! Transaction ID: ${result.transactionId}`);
+      } else {
+        setStatus("✅ Transaction submitted!");
+        alert("Transaction submitted successfully!");
+      }
+
+    } catch (error) {
+      console.error("Transaction error:", error);
+      setStatus(`❌ Transaction failed: ${error.message}`);
+      alert(`Error: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
   };
 
   return (
@@ -152,11 +243,18 @@ function App() {
 
         {accountId && (
           <div className="card">
-            <h3>Ready for Next Step</h3>
-            <p>Wallet connection is working! We'll add transaction functionality next.</p>
-            <button onClick={handleTestButton} className="hedera-button">
-              Test Button
+            <h3>Create Test Gig</h3>
+            <p>This will create a test gig on our smart contract with 1 HBAR escrow.</p>
+            <button 
+              onClick={handleCreateTestGig} 
+              className="hedera-button"
+              disabled={isTransactionLoading}
+            >
+              {isTransactionLoading ? "🔄 Processing..." : "Create Test Gig (1 HBAR)"}
             </button>
+            <div style={{marginTop: '10px', fontSize: '12px', color: '#666'}}>
+              Make sure your wallet has testnet HBAR
+            </div>
           </div>
         )}
       </div>
