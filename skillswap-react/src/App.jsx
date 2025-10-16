@@ -7,7 +7,8 @@ import { WalletConnectModal } from "@walletconnect/modal";
 import { 
   ContractExecuteTransaction,
   ContractFunctionParameters,
-  ContractId  // ← ADDED THIS IMPORT
+  ContractId,
+  AccountId  // Added for address conversion
 } from "@hashgraph/sdk";
 
 // Import our contract address
@@ -116,7 +117,7 @@ function App() {
     }
   };
 
-  // *** FIXED TRANSACTION FUNCTION WITH CONTRACT ADDRESS CONVERSION ***
+  // *** FIXED TRANSACTION FUNCTION WITH PROPER CONTRACT ID HANDLING ***
   const handleCreateTestGig = async () => {
     if (!signClient || !accountId) {
       alert("Please connect wallet first.");
@@ -127,20 +128,46 @@ function App() {
     setStatus("🚀 Preparing transaction...");
     
     try {
-      // Convert EVM address to Hedera contract ID
-      const evmAddress = escrowContractAddress; // "0xaB88Af4647228099fBd2904C25A6feb657beb19a"
+      // OPTION 1: If escrowContractAddress is a ContractId object
+      let contractId;
       
-      // Remove '0x' prefix and convert to Hedera format
-      const addressWithoutPrefix = evmAddress.slice(2);
+      if (typeof escrowContractAddress === 'string') {
+        // It's a string - check if it's EVM format or Hedera format
+        if (escrowContractAddress.startsWith('0x')) {
+          // EVM address - convert to ContractId
+          const addressWithoutPrefix = escrowContractAddress.slice(2);
+          if (addressWithoutPrefix.length !== 40) {
+            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} (expected 40 characters)`);
+          }
+          contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
+        } else if (escrowContractAddress.startsWith('0.0.')) {
+          // Native Hedera format
+          contractId = ContractId.fromString(escrowContractAddress);
+        } else {
+          throw new Error(`Invalid contract address format: ${escrowContractAddress}`);
+        }
+      } else {
+        // It's already a ContractId object
+        contractId = escrowContractAddress;
+      }
+
+      // Convert user account ID to EVM address for the contract call
+      const userAccountId = AccountId.fromString(accountId);
+      const userEvmAddress = userAccountId.toSolidityAddress();
       
-      // Create contract ID from EVM address (THIS IS THE KEY FIX)
-      const contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
-      
+      // Verify the EVM address is correct length (40 chars without 0x)
+      if (userEvmAddress.length !== 40) {
+        throw new Error(`Invalid user EVM address length: ${userEvmAddress.length} (expected 40 characters)`);
+      }
+
+      console.log("Contract ID:", contractId.toString());
+      console.log("User EVM Address:", userEvmAddress);
+
       const transaction = new ContractExecuteTransaction()
-        .setContractId(contractId) // Use the converted contract ID
-        .setGas(150000)
+        .setContractId(contractId)
+        .setGas(300000) // Increased gas for safety
         .setFunction("createGig", new ContractFunctionParameters()
-          .addAddress(accountId)
+          .addAddress(userEvmAddress) // Use the 40-character EVM address
           .addUint256(1 * 1e8) // 1 HBAR
         );
 
