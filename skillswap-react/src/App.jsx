@@ -1,151 +1,35 @@
 import { useEffect, useState } from "react";
 import './App.css';
 
-import SignClient from "@walletconnect/sign-client";
-import { WalletConnectModal } from "@walletconnect/modal";
-import { 
-  ContractExecuteTransaction,
-  ContractFunctionParameters,
-  ContractId,
-  AccountId,
-  Hbar
-} from "@hashgraph/sdk";
-
-import { escrowContractAddress } from "./hedera.js";
-
-const projectId = "2798ba475f686a8e0ec83cc2cceb095b";
-
 function App() {
   const [accountId, setAccountId] = useState(null);
-  const [status, setStatus] = useState("Initializing...");
+  const [status, setStatus] = useState("Loading...");
   const [isLoading, setIsLoading] = useState(false);
-  const [signClient, setSignClient] = useState(null);
 
   useEffect(() => {
-    initializeWalletConnect();
+    // Simple initialization without WalletConnect for now
+    setStatus("Ready to connect");
   }, []);
 
-  const initializeWalletConnect = async () => {
-    try {
-      const client = await SignClient.init({
-        projectId,
-        metadata: {
-          name: "Integro Marketplace",
-          description: "A skill marketplace on Hedera",
-          url: window.location.origin,
-          icons: ["https://cdn.hashpack.app/img/logo.png"],
-        },
-      });
-      
-      const modal = new WalletConnectModal({
-        projectId,
-        chains: ["hedera:testnet"],
-      });
-
-      client.on("session_connect", (event) => {
-        const account = event.params.namespaces.hedera.accounts[0].split(':')[2];
-        setAccountId(account);
-        setStatus(`✅ Connected: ${account}`);
-      });
-
-      // Check existing sessions
-      if (client.session.length > 0) {
-        const sessions = Array.from(client.session.values());
-        const lastSession = sessions[sessions.length - 1];
-        const account = lastSession.namespaces.hedera.accounts[0].split(':')[2];
-        setAccountId(account);
-        setStatus(`✅ Connected: ${account}`);
-      } else {
-        setStatus("Ready to connect");
-      }
-
-      setSignClient(client);
-    } catch (error) {
-      setStatus("❌ Initialization failed");
-    }
-  };
-
   const handleConnect = async () => {
-    if (!signClient) return;
-    
     setIsLoading(true);
     setStatus("Connecting...");
     
-    try {
-      const { uri, approval } = await signClient.connect({
-        requiredNamespaces: {
-          hedera: {
-            methods: ["hedera_signAndExecuteTransaction"],
-            chains: ["hedera:testnet"],
-            events: ["accountsChanged"],
-          },
-        },
-      });
-
-      if (uri) {
-        const modal = new WalletConnectModal({ projectId, chains: ["hedera:testnet"] });
-        await modal.openModal({ uri });
-        await approval();
-        modal.closeModal();
-      }
-    } catch (error) {
-      setStatus("❌ Connection failed");
-    } finally {
+    // Simulate connection process
+    setTimeout(() => {
+      setAccountId("0.0.123456");
+      setStatus("✅ Connected successfully!");
       setIsLoading(false);
-    }
+    }, 2000);
   };
 
-  // SIMPLIFIED TRANSACTION FUNCTION - Let's debug step by step
-  const handleCreateTestGig = async () => {
-  alert("Button clicked - starting transaction...");
-  
-  if (!signClient || !accountId) {
-    alert("❌ No wallet connected");
-    return;
-  }
+  const handleDisconnect = () => {
+    setAccountId(null);
+    setStatus("Disconnected");
+  };
 
-  try {
-    alert("Step 1: Getting session...");
-    const sessions = Array.from(signClient.session.values());
-    const session = sessions[0];
-    
-    alert("Step 2: Creating simple transfer...");
-    // Let's try a simple HBAR transfer instead of contract call
-    const transaction = await new TransferTransaction()
-      .addHbarTransfer(accountId, new Hbar(-1)) // Send 1 HBAR from user
-      .addHbarTransfer("0.0.123456", new Hbar(1)) // Send to some account
-      .freezeWith(signClient);
-
-    alert("Step 3: Sending to wallet...");
-    const result = await signClient.request({
-      topic: session.topic,
-      chainId: "hedera:testnet", 
-      request: {
-        method: "hedera_signAndExecuteTransaction",
-        params: {
-          transaction: await transaction.toBytes()
-        }
-      }
-    });
-
-    alert("✅ Success! Transaction sent");
-    
-  } catch (error) {
-    alert(`❌ Error: ${error.message}`);
-  }
-};
-  const handleDisconnect = async () => {
-    if (signClient) {
-      const sessions = Array.from(signClient.session.values());
-      if (sessions.length > 0) {
-        await signClient.disconnect({
-          topic: sessions[0].topic,
-          reason: { code: 6000, message: "User disconnected" }
-        });
-      }
-      setAccountId(null);
-      setStatus("Disconnected");
-    }
+  const handleCreateTestGig = () => {
+    alert("This will create a test gig when WalletConnect is working");
   };
 
   return (
@@ -176,9 +60,9 @@ function App() {
         {accountId && (
           <div className="card">
             <h3>Test Transaction</h3>
-            <p>Create a test gig on the smart contract</p>
-            <button onClick={handleCreateTestGig} className="hedera-button" disabled={isLoading}>
-              {isLoading ? "Processing..." : "Create Test Gig (1 HBAR)"}
+            <p>Wallet connection will be added in next step</p>
+            <button onClick={handleCreateTestGig} className="hedera-button">
+              Create Test Gig (1 HBAR)
             </button>
           </div>
         )}
@@ -187,7 +71,7 @@ function App() {
   );
 }
 
-// Keep your existing CSS styles
+// Basic CSS styles
 function CustomStyles() {
   return (
     <style>{`
