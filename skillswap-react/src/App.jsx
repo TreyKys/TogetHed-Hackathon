@@ -8,7 +8,8 @@ import {
   ContractFunctionParameters,
   ContractId,
   AccountId,
-  Hbar
+  Hbar,
+  TransferTransaction // ✅ NOW PROPERLY IMPORTED
 } from "@hashgraph/sdk";
 
 import { escrowContractAddress } from "./hedera.js";
@@ -113,7 +114,7 @@ function App() {
     }
   };
 
-  // *** TARGETED FIX FOR WALLETCONNECT_REQUEST ERROR ***
+  // *** CORRECTED TRANSACTION FUNCTION ***
   const handleCreateTestGig = async () => {
     if (!signClient || !accountId) {
       alert("Please connect wallet first.");
@@ -137,11 +138,10 @@ function App() {
 
       setStatus("📝 Building transaction...");
 
-      // Step 2: Create a SIMPLE test transaction first
-      // Let's test with a basic transfer instead of contract call
-      const transaction = new TransferTransaction()
-        .addHbarTransfer(accountId, Hbar.fromTinybars(-100000000)) // -1 HBAR from user
-        .addHbarTransfer("0.0.3", Hbar.fromTinybars(100000000))   // +1 HBAR to treasury
+      // Step 2: Create a SIMPLE test transaction
+      const transaction = new TransferTransaction() // ✅ NOW WORKS
+        .addHbarTransfer(accountId, new Hbar(-1)) // -1 HBAR from user
+        .addHbarTransfer("0.0.3", new Hbar(1))    // +1 HBAR to treasury (test account)
         .setTransactionMemo("Integro test transaction")
         .setMaxTransactionFee(new Hbar(2));
 
@@ -152,7 +152,7 @@ function App() {
       
       setStatus("📤 Sending to HashPack...");
 
-      // Step 4: WalletConnect request with SIMPLIFIED parameters
+      // Step 4: WalletConnect request
       const result = await signClient.request({
         topic: session.topic,
         chainId: "hedera:testnet",
@@ -174,8 +174,7 @@ function App() {
       }
 
     } catch (error) {
-      // Enhanced error handling for walletconnect_request
-      console.error("WalletConnect request error:", error);
+      console.error("Transaction error:", error);
       
       let errorMessage = "Transaction failed";
       
@@ -187,20 +186,8 @@ function App() {
         errorMessage = "Wallet rejected or network error";
       }
 
-      // Specific fixes for common issues:
-      if (errorMessage.includes("rejected") || errorMessage.includes("denied")) {
-        errorMessage = "Transaction was rejected in HashPack";
-      } else if (errorMessage.includes("timeout")) {
-        errorMessage = "Wallet didn't respond. Please try again.";
-      }
-
       setStatus(`❌ ${errorMessage}`);
       alert(`❌ ${errorMessage}`);
-      
-      // Additional troubleshooting tips
-      if (errorMessage.includes("Wallet rejected")) {
-        alert("💡 Tip: Make sure you have enough testnet HBAR and try again.");
-      }
     } finally {
       setIsTransactionLoading(false);
     }
@@ -240,7 +227,7 @@ function App() {
         {accountId && (
           <div className="card">
             <h3>Test Simple Transaction</h3>
-            <p>We're testing with a simple HBAR transfer first</p>
+            <p>Testing with a simple 1 HBAR transfer to verify the flow</p>
             <button 
               onClick={handleCreateTestGig} 
               className="hedera-button"
@@ -249,7 +236,7 @@ function App() {
               {isTransactionLoading ? "🔄 Processing..." : "Test Simple Transfer (1 HBAR)"}
             </button>
             <div style={{marginTop: '10px', fontSize: '12px', color: '#666', textAlign: 'center'}}>
-              🔧 Testing basic transaction flow first
+              💡 This tests if basic transactions work before contract calls
             </div>
           </div>
         )}
