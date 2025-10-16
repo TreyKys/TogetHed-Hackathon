@@ -1,43 +1,122 @@
 import { useEffect, useState } from "react";
 import './App.css';
 
+// Our working WalletConnect imports
+import SignClient from "@walletconnect/sign-client";
+import { WalletConnectModal } from "@walletconnect/modal";
+
+const projectId = "2798ba475f686a8e0ec83cc2cceb095b";
+
 function App() {
   const [accountId, setAccountId] = useState(null);
-  const [status, setStatus] = useState("Loading...");
-  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState("Initializing WalletConnect...");
+  const [isLoading, setIsLoading] = useState(true);
+  const [signClient, setSignClient] = useState(null);
+  const [modal, setModal] = useState(null);
 
+  // This effect runs once on component mount - OUR PROVEN WORKING INITIALIZATION
   useEffect(() => {
-    // Simple initialization without WalletConnect for now
-    setStatus("Ready to connect");
+    async function initialize() {
+      try {
+        // Initialize the SignClient (the "engine")
+        const client = await SignClient.init({
+          projectId: projectId,
+          metadata: {
+            name: "SkillSwap Marketplace",
+            description: "A skill marketplace on Hedera",
+            url: window.location.origin,
+            icons: [],
+          },
+        });
+        
+        // Initialize the Modal (the "UI")
+        const wcModal = new WalletConnectModal({
+          projectId: projectId,
+          chains: ["hedera:testnet"], // Specify the Hedera testnet
+        });
+
+        // Set up event listener for successful connection
+        client.on("session_connect", (event) => {
+          const connectedAccountId = event.params.namespaces.hedera.accounts[0].split(':')[2];
+          setAccountId(connectedAccountId);
+          setStatus(`✅ Connected as: ${connectedAccountId}`);
+        });
+
+        // Check for existing sessions
+        if (client.session.length > 0) {
+          const lastSession = client.session.get(client.session.keys.at(-1));
+          const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
+          setAccountId(existingAccountId);
+          setStatus(`✅ Connected as: ${existingAccountId}`);
+        }
+
+        setSignClient(client);
+        setModal(wcModal);
+        setStatus("Ready to connect");
+        setIsLoading(false);
+
+      } catch (error) {
+        console.error("Initialization failed:", error);
+        setStatus(`❌ Initialization error: ${error.message}`);
+        setIsLoading(false);
+      }
+    }
+    initialize();
   }, []);
 
- const handleConnect = async () => {
-  setIsLoading(true);
-  setStatus("Initializing WalletConnect...");
-  
-  try {
-    // Test if WalletConnect libraries are available
-    if (typeof SignClient === 'undefined') {
-      throw new Error("WalletConnect not loaded");
+  // The connect function that performs the handshake - OUR PROVEN WORKING CONNECTION
+  const handleConnect = async () => {
+    if (!signClient || !modal) {
+      setStatus("❌ Connector not ready. Please refresh.");
+      return;
     }
-    
-    setStatus("WalletConnect ready - this is progress!");
-    // We'll add the actual connection in the next step
-    
-  } catch (error) {
-    setStatus(`❌ WalletConnect error: ${error.message}`);
-  } finally {
-    setIsLoading(false);
-  }
-};
+    setIsLoading(true);
+    setStatus("🔄 Requesting session from server...");
 
-  const handleDisconnect = () => {
-    setAccountId(null);
-    setStatus("Disconnected");
+    try {
+      // Perform the handshake with the WalletConnect server
+      const { uri, approval } = await signClient.connect({
+        requiredNamespaces: {
+          hedera: {
+            methods: ["hedera_signMessage", "hedera_signAndExecuteTransaction"],
+            chains: ["hedera:testnet"],
+            events: ["chainChanged", "accountsChanged"],
+          },
+        },
+      });
+
+      // Open the modal with the REAL, VALID URI
+      if (uri) {
+        setStatus("✅ URI generated! Please scan with HashPack.");
+        await modal.openModal({ uri });
+        // The modal is now open, waiting for user to scan.
+        // The `session_connect` event will fire when they approve in the wallet.
+        await approval(); // Wait for the session to be approved
+        modal.closeModal();
+      }
+    } catch (error) {
+      console.error("Connection failed:", error);
+      setStatus(`❌ Connection Failed or Rejected.`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleCreateTestGig = () => {
-    alert("This will create a test gig when WalletConnect is working");
+  const handleDisconnect = async () => {
+    if (signClient && signClient.session.length > 0) {
+      const lastSession = signClient.session.get(signClient.session.keys.at(-1));
+      await signClient.disconnect({
+        topic: lastSession.topic,
+        reason: { code: 6000, message: "User disconnected." },
+      });
+      setAccountId(null);
+      setStatus("Ready to connect");
+    }
+  };
+
+  // SIMPLE TEST BUTTON - No transaction logic yet
+  const handleTestButton = () => {
+    alert("Wallet connection is working! Transaction functionality will be added next.");
   };
 
   return (
@@ -51,26 +130,32 @@ function App() {
         <div className="card">
           <h3>Wallet Connection</h3>
           <div className={`status-message ${accountId ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
-            {accountId ? `Connected: ${accountId}` : status}
+            {accountId ? `✅ Connected as: ${accountId}` : status}
           </div>
           
           {accountId ? (
-            <button onClick={handleDisconnect} className="hedera-button disconnect">
-              Disconnect
-            </button>
+            <div className="connected-state">
+              <button onClick={handleDisconnect} className="hedera-button disconnect">
+                🚪 Disconnect
+              </button>
+            </div>
           ) : (
-            <button onClick={handleConnect} className="hedera-button" disabled={isLoading}>
-              {isLoading ? "Connecting..." : "Connect Wallet"}
+            <button 
+              onClick={handleConnect} 
+              className="hedera-button"
+              disabled={isLoading}
+            >
+              {isLoading ? "🔄 Connecting..." : "🔗 Connect Wallet"}
             </button>
           )}
         </div>
 
         {accountId && (
           <div className="card">
-            <h3>Test Transaction</h3>
-            <p>Wallet connection will be added in next step</p>
-            <button onClick={handleCreateTestGig} className="hedera-button">
-              Create Test Gig (1 HBAR)
+            <h3>Ready for Next Step</h3>
+            <p>Wallet connection is working! We'll add transaction functionality next.</p>
+            <button onClick={handleTestButton} className="hedera-button">
+              Test Button
             </button>
           </div>
         )}
@@ -79,7 +164,7 @@ function App() {
   );
 }
 
-// Basic CSS styles
+// CSS Styles - Our proven working styles
 function CustomStyles() {
   return (
     <style>{`
@@ -90,6 +175,8 @@ function CustomStyles() {
         border-radius: 20px; 
         box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); 
         overflow: hidden; 
+        display: flex; 
+        flex-direction: column; 
         font-family: Arial, sans-serif;
       }
       .header { 
@@ -127,6 +214,10 @@ function CustomStyles() {
         width: 100%; 
         margin-top: 15px; 
         font-weight: 600; 
+        transition: background 0.3s;
+      }
+      .hedera-button:hover:not(:disabled) { 
+        background: #25b366; 
       }
       .hedera-button:disabled { 
         background: #cccccc; 
@@ -135,6 +226,9 @@ function CustomStyles() {
       .hedera-button.disconnect { 
         background: #ff4444; 
         color: white; 
+      }
+      .hedera-button.disconnect:hover { 
+        background: #cc3333; 
       }
       .status-message { 
         padding: 10px; 
