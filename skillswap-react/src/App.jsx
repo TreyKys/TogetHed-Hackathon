@@ -125,7 +125,7 @@ function App() {
     }
   };
 
-  // *** NEW: CAREFULLY ADDED TRANSACTION FUNCTION ***
+  // *** FIXED TRANSACTION FUNCTION - REMOVED FREEZE WITH ***
   const handleCreateTestGig = async () => {
     if (!signClient || !accountId) {
       alert("Please connect wallet first.");
@@ -149,6 +149,9 @@ function App() {
         if (escrowContractAddress.startsWith('0x')) {
           // EVM address - remove 0x prefix
           const addressWithoutPrefix = escrowContractAddress.slice(2);
+          if (addressWithoutPrefix.length !== 40) {
+            throw new Error(`Invalid EVM address length: ${addressWithoutPrefix.length} (expected 40)`);
+          }
           contractId = ContractId.fromEvmAddress(0, 0, addressWithoutPrefix);
         } else if (escrowContractAddress.startsWith('0.0.')) {
           // Native Hedera format
@@ -165,18 +168,23 @@ function App() {
       const userAccountId = AccountId.fromString(accountId);
       const userEvmAddress = userAccountId.toSolidityAddress();
 
+      // Validate EVM address length
+      if (userEvmAddress.length !== 40) {
+        throw new Error(`Invalid user EVM address length: ${userEvmAddress.length} (expected 40)`);
+      }
+
       setStatus("📝 Building transaction...");
 
-      // Step 4: Create the transaction
-      const transaction = await new ContractExecuteTransaction()
+      // Step 4: Create the transaction WITHOUT FREEZE - WalletConnect handles this
+      const transaction = new ContractExecuteTransaction()
         .setContractId(contractId)
-        .setGas(300000) // Sufficient gas
-        .setMaxTransactionFee(new Hbar(2)) // Set reasonable fee
+        .setGas(500000) // Increased gas for safety
+        .setMaxTransactionFee(new Hbar(5)) // Increased fee
         .setFunction("createGig", new ContractFunctionParameters()
           .addAddress(userEvmAddress) // 40-character EVM address
           .addUint256(100000000) // 1 HBAR in tinybars
-        )
-        .freezeWith(null); // Freeze transaction
+        );
+        // REMOVED: .freezeWith(null) - WalletConnect handles freezing
 
       setStatus("⏳ Sending to HashPack...");
 
@@ -196,6 +204,9 @@ function App() {
       if (result && result.transactionId) {
         setStatus("✅ Test Gig created successfully!");
         alert(`🎉 Success! Transaction ID: ${result.transactionId}`);
+      } else if (result && result.id) {
+        setStatus("✅ Transaction submitted!");
+        alert(`Transaction submitted! ID: ${result.id}`);
       } else {
         setStatus("✅ Transaction submitted!");
         alert("Transaction submitted successfully!");
