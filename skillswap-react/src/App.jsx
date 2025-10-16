@@ -97,88 +97,43 @@ function App() {
 
   // SIMPLIFIED TRANSACTION FUNCTION - Let's debug step by step
   const handleCreateTestGig = async () => {
-    if (!signClient || !accountId) {
-      alert("Please connect wallet first");
-      return;
-    }
+  alert("Button clicked - starting transaction...");
+  
+  if (!signClient || !accountId) {
+    alert("❌ No wallet connected");
+    return;
+  }
 
-    setIsLoading(true);
-    setStatus("Building transaction...");
+  try {
+    alert("Step 1: Getting session...");
+    const sessions = Array.from(signClient.session.values());
+    const session = sessions[0];
+    
+    alert("Step 2: Creating simple transfer...");
+    // Let's try a simple HBAR transfer instead of contract call
+    const transaction = await new TransferTransaction()
+      .addHbarTransfer(accountId, new Hbar(-1)) // Send 1 HBAR from user
+      .addHbarTransfer("0.0.123456", new Hbar(1)) // Send to some account
+      .freezeWith(signClient);
 
-    try {
-      // Step 1: Get current session
-      const sessions = Array.from(signClient.session.values());
-      if (sessions.length === 0) {
-        throw new Error("No active session");
-      }
-      const session = sessions[0];
-      
-      // Step 2: Prepare contract ID
-      let contractId;
-      if (typeof escrowContractAddress === 'string') {
-        if (escrowContractAddress.startsWith('0x')) {
-          // Remove 0x prefix for Hedera SDK
-          const evmAddress = escrowContractAddress.slice(2);
-          contractId = ContractId.fromEvmAddress(0, 0, evmAddress);
-        } else {
-          contractId = ContractId.fromString(escrowContractAddress);
+    alert("Step 3: Sending to wallet...");
+    const result = await signClient.request({
+      topic: session.topic,
+      chainId: "hedera:testnet", 
+      request: {
+        method: "hedera_signAndExecuteTransaction",
+        params: {
+          transaction: await transaction.toBytes()
         }
-      } else {
-        contractId = escrowContractAddress;
       }
+    });
 
-      // Step 3: Convert user account to EVM address format
-      const userAccount = AccountId.fromString(accountId);
-      const userEvmAddress = userAccount.toSolidityAddress();
-
-      setStatus("Creating transaction...");
-
-      // Step 4: Build the transaction - SIMPLIFIED
-      const transaction = await new ContractExecuteTransaction()
-        .setContractId(contractId)
-        .setGas(1000000) // Increased gas
-        .setFunction("createGig", new ContractFunctionParameters()
-          .addAddress(userEvmAddress)
-          .addUint256(100000000) // 1 HBAR in tinybars
-        )
-        .setMaxTransactionFee(new Hbar(2)) // Explicit fee
-        .freezeWith(signClient); // Important: freeze the transaction
-
-      setStatus("Sending to wallet...");
-
-      // Step 5: Send through WalletConnect
-      const result = await signClient.request({
-        topic: session.topic,
-        chainId: "hedera:testnet",
-        request: {
-          method: "hedera_signAndExecuteTransaction",
-          params: {
-            transaction: await transaction.toBytes(),
-            options: {
-              returnTransaction: false
-            }
-          }
-        }
-      });
-
-      // Step 6: Handle response
-      if (result && result.transactionId) {
-        setStatus("✅ Transaction successful!");
-        alert(`Success! TX: ${result.transactionId}`);
-      } else {
-        setStatus("✅ Transaction sent!");
-        alert("Transaction submitted successfully!");
-      }
-
-    } catch (error) {
-      console.error("Transaction error:", error);
-      setStatus(`❌ Error: ${error.message}`);
-      alert(`Error: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+    alert("✅ Success! Transaction sent");
+    
+  } catch (error) {
+    alert(`❌ Error: ${error.message}`);
+  }
+};
   const handleDisconnect = async () => {
     if (signClient) {
       const sessions = Array.from(signClient.session.values());
