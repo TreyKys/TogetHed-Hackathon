@@ -11,17 +11,25 @@ function App() {
     setStatus("Ready to connect");
   }, []);
 
-  const handleConnect = async () => {
-    setIsLoading(true);
-    setStatus("Connecting...");
+ const handleConnect = async () => {
+  setIsLoading(true);
+  setStatus("Initializing WalletConnect...");
+  
+  try {
+    // Test if WalletConnect libraries are available
+    if (typeof SignClient === 'undefined') {
+      throw new Error("WalletConnect not loaded");
+    }
     
-    // Simulate connection process
-    setTimeout(() => {
-      setAccountId("0.0.123456");
-      setStatus("✅ Connected successfully!");
-      setIsLoading(false);
-    }, 2000);
-  };
+    setStatus("WalletConnect ready - this is progress!");
+    // We'll add the actual connection in the next step
+    
+  } catch (error) {
+    setStatus(`❌ WalletConnect error: ${error.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleDisconnect = () => {
     setAccountId(null);
