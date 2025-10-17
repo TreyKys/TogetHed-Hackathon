@@ -25,6 +25,7 @@ function App() {
   const [signClient, setSignClient] = useState(null);
   const [modal, setModal] = useState(null);
   const [accountId, setAccountId] = useState(null);
+  const [evmAddress, setEvmAddress] = useState(null);
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
 
@@ -62,22 +63,25 @@ function App() {
         const hederaProvider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
         setProvider(hederaProvider);
 
-        client.on("session_connect", async (event) => {
-          const connectedAccountId = event.params.namespaces.hedera.accounts[0].split(':')[2];
+        const onSessionConnect = async (session) => {
+          const connectedAccountId = session.namespaces.hedera.accounts[0].split(':')[2];
           setAccountId(connectedAccountId);
-          // Create a signer instance when the user connects
-          const hederaSigner = await hederaProvider.getSigner(connectedAccountId);
-          setSigner(hederaSigner);
-          setStatus(`✅ Connected as: ${connectedAccountId}`);
-        });
+          setStatus("⏳ Resolving EVM address...");
+
+          const fetchedEvmAddress = await getEvmAddress(connectedAccountId);
+          if (fetchedEvmAddress) {
+            setEvmAddress(fetchedEvmAddress);
+            const hederaSigner = await hederaProvider.getSigner(fetchedEvmAddress);
+            setSigner(hederaSigner);
+            setStatus(`✅ Connected as: ${connectedAccountId}`);
+          }
+        };
+
+        client.on("session_connect", (event) => onSessionConnect(event.params));
 
         if (client.session.length > 0) {
           const lastSession = client.session.get(client.session.keys.at(-1));
-          const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
-          setAccountId(existingAccountId);
-          const hederaSigner = await hederaProvider.getSigner(existingAccountId);
-          setSigner(hederaSigner);
-          setStatus(`✅ Connected as: ${existingAccountId}`);
+          onSessionConnect(lastSession);
         }
 
         setSignClient(client);
@@ -94,6 +98,24 @@ function App() {
     initialize();
   }, [accountId]);
 
+  // --- Address Resolution Helper ---
+  const getEvmAddress = async (accountId) => {
+    try {
+      const response = await fetch(`https://testnet.mirrornode.hedera.com/api/v1/accounts/${accountId}`);
+      if (!response.ok) {
+        throw new Error(`Mirror node query failed with status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!data.evm_address) {
+        throw new Error("EVM address not found for this account. Please ensure it has been activated.");
+      }
+      return data.evm_address;
+    } catch (error) {
+      console.error("Could not fetch EVM address:", error);
+      setStatus(`❌ ${error.message}`);
+      return null;
+    }
+  };
 
   // --- WalletConnect Handlers ---
   const handleConnect = async () => {
@@ -153,7 +175,7 @@ function App() {
       const assetTokenContract = getContract(assetTokenContractAddress, assetTokenContractABI, signer);
       // NOTE: In a real app, the backend/owner would mint. Here, the user does for the demo.
       const tx = await assetTokenContract.safeMint(
-        accountId,
+        evmAddress, // Use the resolved EVM address
         "Yam Harvest Future",
         "Grade A",
         "Ikorodu, Nigeria"
