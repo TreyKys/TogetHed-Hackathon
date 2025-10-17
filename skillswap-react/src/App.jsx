@@ -3,7 +3,7 @@ import './App.css';
 
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
-import {
+import { 
   TransferTransaction,
   Hbar
 } from "@hashgraph/sdk";
@@ -21,11 +21,10 @@ function App() {
   useEffect(() => {
     async function initialize() {
       try {
-        // ✅ **THE FIX IS HERE** ✅
         const client = await SignClient.init({
           projectId: projectId,
-          // This line explicitly defines the communication server, resolving protocol errors.
-          relayUrl: "wss://relay.walletconnect.com",
+          // We keep this explicit relayUrl for best practice
+          relayUrl: "wss://relay.walletconnect.com", 
           metadata: {
             name: "Integro Marketplace",
             description: "A skill marketplace on Hedera",
@@ -33,7 +32,7 @@ function App() {
             icons: [],
           },
         });
-
+        
         const wcModal = new WalletConnectModal({
           projectId: projectId,
           chains: ["hedera:testnet"],
@@ -45,6 +44,7 @@ function App() {
           setStatus(`✅ Connected as: ${connectedAccountId}`);
         });
 
+        // This logic correctly re-establishes a previous connection if one exists
         if (client.session.length > 0) {
           const lastSession = client.session.get(client.session.keys.at(-1));
           const existingAccountId = lastSession.namespaces.hedera.accounts[0].split(':')[2];
@@ -119,23 +119,27 @@ function App() {
 
     setIsTransactionLoading(true);
     setStatus("🚀 Starting transaction...");
-
+    
     try {
       const sessionKeys = Array.from(signClient.session.keys);
       if (sessionKeys.length === 0) throw new Error("No active wallet session");
-      const session = signClient.session.get(sessionKeys[0]);
+      
+      // ✅ **THE FIX IS HERE** ✅
+      // We now explicitly use the MOST RECENT session, which is the last one in the array.
+      const session = signClient.session.get(sessionKeys.at(-1)); 
+
       if (!session?.topic) throw new Error("Invalid session or missing topic");
 
       setStatus("📝 Building transaction...");
       const transaction = new TransferTransaction()
-        .addHbarTransfer(accountId, new Hbar(-1))
+        .addHbarTransfer(accountId, new Hbar(-1)) 
         .addHbarTransfer("0.0.3", new Hbar(1))
         .setTransactionMemo("Integro test transaction")
         .setMaxTransactionFee(new Hbar(2));
 
       setStatus("💾 Converting to bytes...");
       const transactionBytes = await transaction.toBytes();
-
+      
       setStatus("📤 Sending to HashPack...");
       const result = await signClient.request({
         topic: session.topic,
@@ -165,8 +169,8 @@ function App() {
       setIsTransactionLoading(false);
     }
   };
-
-  // No changes to JSX or Styles below this line
+  
+  // No changes to JSX or Styles
   return (
     <div className="container">
       <div className="header"><h1>Integro</h1><p>Powered by Hedera</p></div>
