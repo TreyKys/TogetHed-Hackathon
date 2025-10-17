@@ -26,20 +26,29 @@ import type {
 export interface EscrowInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "cancelGig"
+      | "assetTokenAddress"
+      | "cancelListing"
       | "confirmDelivery"
-      | "createGig"
-      | "fundGig"
-      | "gigs"
-      | "nextGigId"
+      | "fundEscrow"
+      | "listAsset"
+      | "listings"
+      | "refundBuyer"
   ): FunctionFragment;
 
   getEvent(
-    nameOrSignatureOrTopic: "Canceled" | "Confirmed" | "Funded" | "GigCreated"
+    nameOrSignatureOrTopic:
+      | "AssetListed"
+      | "EscrowFunded"
+      | "ListingCanceled"
+      | "SaleCompleted"
   ): EventFragment;
 
   encodeFunctionData(
-    functionFragment: "cancelGig",
+    functionFragment: "assetTokenAddress",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "cancelListing",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
@@ -47,84 +56,97 @@ export interface EscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "createGig",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "fundGig",
+    functionFragment: "fundEscrow",
     values: [BigNumberish]
   ): string;
-  encodeFunctionData(functionFragment: "gigs", values: [BigNumberish]): string;
-  encodeFunctionData(functionFragment: "nextGigId", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "listAsset",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "listings",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "refundBuyer",
+    values: [BigNumberish]
+  ): string;
 
-  decodeFunctionResult(functionFragment: "cancelGig", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "assetTokenAddress",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "cancelListing",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "confirmDelivery",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "createGig", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "fundGig", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "gigs", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "nextGigId", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "fundEscrow", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "listAsset", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "listings", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "refundBuyer",
+    data: BytesLike
+  ): Result;
 }
 
-export namespace CanceledEvent {
-  export type InputTuple = [gigId: BigNumberish, canceledBy: AddressLike];
-  export type OutputTuple = [gigId: bigint, canceledBy: string];
-  export interface OutputObject {
-    gigId: bigint;
-    canceledBy: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace ConfirmedEvent {
-  export type InputTuple = [gigId: BigNumberish, buyer: AddressLike];
-  export type OutputTuple = [gigId: bigint, buyer: string];
-  export interface OutputObject {
-    gigId: bigint;
-    buyer: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace FundedEvent {
-  export type InputTuple = [gigId: BigNumberish, buyer: AddressLike];
-  export type OutputTuple = [gigId: bigint, buyer: string];
-  export interface OutputObject {
-    gigId: bigint;
-    buyer: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace GigCreatedEvent {
+export namespace AssetListedEvent {
   export type InputTuple = [
-    gigId: BigNumberish,
+    tokenId: BigNumberish,
     seller: AddressLike,
-    buyer: AddressLike,
     price: BigNumberish
   ];
-  export type OutputTuple = [
-    gigId: bigint,
-    seller: string,
-    buyer: string,
-    price: bigint
-  ];
+  export type OutputTuple = [tokenId: bigint, seller: string, price: bigint];
   export interface OutputObject {
-    gigId: bigint;
+    tokenId: bigint;
+    seller: string;
+    price: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EscrowFundedEvent {
+  export type InputTuple = [tokenId: BigNumberish, buyer: AddressLike];
+  export type OutputTuple = [tokenId: bigint, buyer: string];
+  export interface OutputObject {
+    tokenId: bigint;
+    buyer: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ListingCanceledEvent {
+  export type InputTuple = [tokenId: BigNumberish];
+  export type OutputTuple = [tokenId: bigint];
+  export interface OutputObject {
+    tokenId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SaleCompletedEvent {
+  export type InputTuple = [
+    tokenId: BigNumberish,
+    seller: AddressLike,
+    buyer: AddressLike
+  ];
+  export type OutputTuple = [tokenId: bigint, seller: string, buyer: string];
+  export interface OutputObject {
+    tokenId: bigint;
     seller: string;
     buyer: string;
-    price: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -175,23 +197,29 @@ export interface Escrow extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  cancelGig: TypedContractMethod<[_gigId: BigNumberish], [void], "nonpayable">;
+  assetTokenAddress: TypedContractMethod<[], [string], "view">;
+
+  cancelListing: TypedContractMethod<
+    [tokenId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   confirmDelivery: TypedContractMethod<
-    [_gigId: BigNumberish],
+    [tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
 
-  createGig: TypedContractMethod<
-    [_seller: AddressLike, _price: BigNumberish],
+  fundEscrow: TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
+
+  listAsset: TypedContractMethod<
+    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
     [void],
     "nonpayable"
   >;
 
-  fundGig: TypedContractMethod<[_gigId: BigNumberish], [void], "payable">;
-
-  gigs: TypedContractMethod<
+  listings: TypedContractMethod<
     [arg0: BigNumberish],
     [
       [string, string, bigint, bigint] & {
@@ -204,30 +232,37 @@ export interface Escrow extends BaseContract {
     "view"
   >;
 
-  nextGigId: TypedContractMethod<[], [bigint], "view">;
+  refundBuyer: TypedContractMethod<
+    [tokenId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
   getFunction(
-    nameOrSignature: "cancelGig"
-  ): TypedContractMethod<[_gigId: BigNumberish], [void], "nonpayable">;
+    nameOrSignature: "assetTokenAddress"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "cancelListing"
+  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "confirmDelivery"
-  ): TypedContractMethod<[_gigId: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "createGig"
+    nameOrSignature: "fundEscrow"
+  ): TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
+  getFunction(
+    nameOrSignature: "listAsset"
   ): TypedContractMethod<
-    [_seller: AddressLike, _price: BigNumberish],
+    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
     [void],
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "fundGig"
-  ): TypedContractMethod<[_gigId: BigNumberish], [void], "payable">;
-  getFunction(
-    nameOrSignature: "gigs"
+    nameOrSignature: "listings"
   ): TypedContractMethod<
     [arg0: BigNumberish],
     [
@@ -241,81 +276,81 @@ export interface Escrow extends BaseContract {
     "view"
   >;
   getFunction(
-    nameOrSignature: "nextGigId"
-  ): TypedContractMethod<[], [bigint], "view">;
+    nameOrSignature: "refundBuyer"
+  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
 
   getEvent(
-    key: "Canceled"
+    key: "AssetListed"
   ): TypedContractEvent<
-    CanceledEvent.InputTuple,
-    CanceledEvent.OutputTuple,
-    CanceledEvent.OutputObject
+    AssetListedEvent.InputTuple,
+    AssetListedEvent.OutputTuple,
+    AssetListedEvent.OutputObject
   >;
   getEvent(
-    key: "Confirmed"
+    key: "EscrowFunded"
   ): TypedContractEvent<
-    ConfirmedEvent.InputTuple,
-    ConfirmedEvent.OutputTuple,
-    ConfirmedEvent.OutputObject
+    EscrowFundedEvent.InputTuple,
+    EscrowFundedEvent.OutputTuple,
+    EscrowFundedEvent.OutputObject
   >;
   getEvent(
-    key: "Funded"
+    key: "ListingCanceled"
   ): TypedContractEvent<
-    FundedEvent.InputTuple,
-    FundedEvent.OutputTuple,
-    FundedEvent.OutputObject
+    ListingCanceledEvent.InputTuple,
+    ListingCanceledEvent.OutputTuple,
+    ListingCanceledEvent.OutputObject
   >;
   getEvent(
-    key: "GigCreated"
+    key: "SaleCompleted"
   ): TypedContractEvent<
-    GigCreatedEvent.InputTuple,
-    GigCreatedEvent.OutputTuple,
-    GigCreatedEvent.OutputObject
+    SaleCompletedEvent.InputTuple,
+    SaleCompletedEvent.OutputTuple,
+    SaleCompletedEvent.OutputObject
   >;
 
   filters: {
-    "Canceled(uint256,address)": TypedContractEvent<
-      CanceledEvent.InputTuple,
-      CanceledEvent.OutputTuple,
-      CanceledEvent.OutputObject
+    "AssetListed(uint256,address,uint256)": TypedContractEvent<
+      AssetListedEvent.InputTuple,
+      AssetListedEvent.OutputTuple,
+      AssetListedEvent.OutputObject
     >;
-    Canceled: TypedContractEvent<
-      CanceledEvent.InputTuple,
-      CanceledEvent.OutputTuple,
-      CanceledEvent.OutputObject
-    >;
-
-    "Confirmed(uint256,address)": TypedContractEvent<
-      ConfirmedEvent.InputTuple,
-      ConfirmedEvent.OutputTuple,
-      ConfirmedEvent.OutputObject
-    >;
-    Confirmed: TypedContractEvent<
-      ConfirmedEvent.InputTuple,
-      ConfirmedEvent.OutputTuple,
-      ConfirmedEvent.OutputObject
+    AssetListed: TypedContractEvent<
+      AssetListedEvent.InputTuple,
+      AssetListedEvent.OutputTuple,
+      AssetListedEvent.OutputObject
     >;
 
-    "Funded(uint256,address)": TypedContractEvent<
-      FundedEvent.InputTuple,
-      FundedEvent.OutputTuple,
-      FundedEvent.OutputObject
+    "EscrowFunded(uint256,address)": TypedContractEvent<
+      EscrowFundedEvent.InputTuple,
+      EscrowFundedEvent.OutputTuple,
+      EscrowFundedEvent.OutputObject
     >;
-    Funded: TypedContractEvent<
-      FundedEvent.InputTuple,
-      FundedEvent.OutputTuple,
-      FundedEvent.OutputObject
+    EscrowFunded: TypedContractEvent<
+      EscrowFundedEvent.InputTuple,
+      EscrowFundedEvent.OutputTuple,
+      EscrowFundedEvent.OutputObject
     >;
 
-    "GigCreated(uint256,address,address,uint256)": TypedContractEvent<
-      GigCreatedEvent.InputTuple,
-      GigCreatedEvent.OutputTuple,
-      GigCreatedEvent.OutputObject
+    "ListingCanceled(uint256)": TypedContractEvent<
+      ListingCanceledEvent.InputTuple,
+      ListingCanceledEvent.OutputTuple,
+      ListingCanceledEvent.OutputObject
     >;
-    GigCreated: TypedContractEvent<
-      GigCreatedEvent.InputTuple,
-      GigCreatedEvent.OutputTuple,
-      GigCreatedEvent.OutputObject
+    ListingCanceled: TypedContractEvent<
+      ListingCanceledEvent.InputTuple,
+      ListingCanceledEvent.OutputTuple,
+      ListingCanceledEvent.OutputObject
+    >;
+
+    "SaleCompleted(uint256,address,address)": TypedContractEvent<
+      SaleCompletedEvent.InputTuple,
+      SaleCompletedEvent.OutputTuple,
+      SaleCompletedEvent.OutputObject
+    >;
+    SaleCompleted: TypedContractEvent<
+      SaleCompletedEvent.InputTuple,
+      SaleCompletedEvent.OutputTuple,
+      SaleCompletedEvent.OutputObject
     >;
   };
 }

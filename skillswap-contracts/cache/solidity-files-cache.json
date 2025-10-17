@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/app/skillswap-contracts/contracts/AssetToken.sol": {
-      "lastModificationDate": 1760227517183,
-      "contentHash": "b4e31058a8bc7cb7b55ee1deb493ee3b",
+      "lastModificationDate": 1760704469923,
+      "contentHash": "771e9c870f8eb252f748871e2cb70139",
       "sourceName": "contracts/AssetToken.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -31,7 +31,8 @@
       },
       "imports": [
         "@openzeppelin/contracts/token/ERC721/ERC721.sol",
-        "@openzeppelin/contracts/access/Ownable.sol"
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "hardhat/console.sol"
       ],
       "versionPragmas": [
         "^0.8.20"
@@ -611,9 +612,48 @@
       ]
     },
     "/app/skillswap-contracts/contracts/Escrow.sol": {
-      "lastModificationDate": 1760227517183,
-      "contentHash": "02ca5d3630eb8e62ce852e6d9474263d",
+      "lastModificationDate": 1760710830563,
+      "contentHash": "8a4fd7d45de6e6bcd8baafa45e446b15",
       "sourceName": "contracts/Escrow.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC721/IERC721.sol",
+        "hardhat/console.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Escrow"
+      ]
+    },
+    "/app/skillswap-contracts/node_modules/hardhat/console.sol": {
+      "lastModificationDate": 1760704435841,
+      "contentHash": "681c532e816169606d13a5fe8b475074",
+      "sourceName": "hardhat/console.sol",
       "solcConfig": {
         "version": "0.8.24",
         "settings": {
@@ -640,10 +680,10 @@
       },
       "imports": [],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.4.22 <0.9.0"
       ],
       "artifacts": [
-        "Escrow"
+        "console"
       ]
     }
   }

@@ -34,5 +34,3 @@ export type { AssetToken } from "./contracts/AssetToken";
 export { AssetToken__factory } from "./factories/contracts/AssetToken__factory";
 export type { Escrow } from "./contracts/Escrow";
 export { Escrow__factory } from "./factories/contracts/Escrow__factory";
-export type { Lock } from "./contracts/Lock";
-export { Lock__factory } from "./factories/contracts/Lock__factory";

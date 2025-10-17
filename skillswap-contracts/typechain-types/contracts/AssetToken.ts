@@ -23,12 +23,28 @@ import type {
   TypedContractMethod,
 } from "../common";
 
+export declare namespace AssetToken {
+  export type AssetDataStruct = {
+    assetType: string;
+    quality: string;
+    location: string;
+  };
+
+  export type AssetDataStructOutput = [
+    assetType: string,
+    quality: string,
+    location: string
+  ] & { assetType: string; quality: string; location: string };
+}
+
 export interface AssetTokenInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "approve"
+      | "assetData"
       | "balanceOf"
       | "getApproved"
+      | "getAssetData"
       | "isApprovedForAll"
       | "name"
       | "owner"
@@ -58,11 +74,19 @@ export interface AssetTokenInterface extends Interface {
     values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "assetData",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "balanceOf",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "getApproved",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getAssetData",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
@@ -81,7 +105,7 @@ export interface AssetTokenInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "safeMint",
-    values: [AddressLike]
+    values: [AddressLike, string, string, string]
   ): string;
   encodeFunctionData(
     functionFragment: "safeTransferFrom(address,address,uint256)",
@@ -114,9 +138,14 @@ export interface AssetTokenInterface extends Interface {
   ): string;
 
   decodeFunctionResult(functionFragment: "approve", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "assetData", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getApproved",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getAssetData",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -279,9 +308,27 @@ export interface AssetToken extends BaseContract {
     "nonpayable"
   >;
 
+  assetData: TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, string, string] & {
+        assetType: string;
+        quality: string;
+        location: string;
+      }
+    ],
+    "view"
+  >;
+
   balanceOf: TypedContractMethod<[owner: AddressLike], [bigint], "view">;
 
   getApproved: TypedContractMethod<[tokenId: BigNumberish], [string], "view">;
+
+  getAssetData: TypedContractMethod<
+    [tokenId: BigNumberish],
+    [AssetToken.AssetDataStructOutput],
+    "view"
+  >;
 
   isApprovedForAll: TypedContractMethod<
     [owner: AddressLike, operator: AddressLike],
@@ -297,7 +344,11 @@ export interface AssetToken extends BaseContract {
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
-  safeMint: TypedContractMethod<[to: AddressLike], [void], "nonpayable">;
+  safeMint: TypedContractMethod<
+    [to: AddressLike, assetType: string, quality: string, location: string],
+    [void],
+    "nonpayable"
+  >;
 
   "safeTransferFrom(address,address,uint256)": TypedContractMethod<
     [from: AddressLike, to: AddressLike, tokenId: BigNumberish],
@@ -356,11 +407,31 @@ export interface AssetToken extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "assetData"
+  ): TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, string, string] & {
+        assetType: string;
+        quality: string;
+        location: string;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[owner: AddressLike], [bigint], "view">;
   getFunction(
     nameOrSignature: "getApproved"
   ): TypedContractMethod<[tokenId: BigNumberish], [string], "view">;
+  getFunction(
+    nameOrSignature: "getAssetData"
+  ): TypedContractMethod<
+    [tokenId: BigNumberish],
+    [AssetToken.AssetDataStructOutput],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "isApprovedForAll"
   ): TypedContractMethod<
@@ -382,7 +453,11 @@ export interface AssetToken extends BaseContract {
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "safeMint"
-  ): TypedContractMethod<[to: AddressLike], [void], "nonpayable">;
+  ): TypedContractMethod<
+    [to: AddressLike, assetType: string, quality: string, location: string],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "safeTransferFrom(address,address,uint256)"
   ): TypedContractMethod<

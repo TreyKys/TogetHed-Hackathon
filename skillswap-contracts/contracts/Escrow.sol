@@ -1,68 +1,112 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "hardhat/console.sol";
+
 contract Escrow {
-    enum State { AWAITING_PAYMENT, AWAITING_DELIVERY, COMPLETE, CANCELED }
+    address public assetTokenAddress;
 
-    struct Gig {
-        address payable seller;
-        address payable buyer;
+    enum ListingState {
+        LISTED,
+        FUNDED,
+        SOLD,
+        CANCELED
+    }
+
+    struct Listing {
+        address seller;
+        address buyer;
         uint256 price;
-        State state;
+        ListingState state;
     }
 
-    mapping(uint256 => Gig) public gigs;
-    uint256 public nextGigId;
+    mapping(uint256 => Listing) public listings;
 
-    event GigCreated(uint256 gigId, address seller, address buyer, uint256 price);
-    event Funded(uint256 gigId, address buyer);
-    event Confirmed(uint256 gigId, address buyer);
-    event Canceled(uint256 gigId, address canceledBy);
+    event AssetListed(uint256 indexed tokenId, address indexed seller, uint256 price);
+    event EscrowFunded(uint256 indexed tokenId, address indexed buyer);
+    event SaleCompleted(uint256 indexed tokenId, address indexed seller, address indexed buyer);
+    event ListingCanceled(uint256 indexed tokenId);
 
-    function createGig(address payable _seller, uint256 _price) external {
-        gigs[nextGigId] = Gig({
-            seller: _seller,
-            buyer: payable(msg.sender),
-            price: _price,
-            state: State.AWAITING_PAYMENT
+    constructor(address _assetTokenAddress) {
+        assetTokenAddress = _assetTokenAddress;
+    }
+
+    function listAsset(uint256 tokenId, uint256 priceInTinybars) external {
+        IERC721 assetToken = IERC721(assetTokenAddress);
+        require(assetToken.ownerOf(tokenId) == msg.sender, "Escrow: Only the owner can list the asset.");
+        require(assetToken.getApproved(tokenId) == address(this), "Escrow: Contract must be approved to transfer the asset.");
+        require(priceInTinybars > 0, "Escrow: Price must be greater than zero.");
+
+        listings[tokenId] = Listing({
+            seller: msg.sender,
+            buyer: address(0), // Buyer is not known yet
+            price: priceInTinybars, // Storing the price in tinybars (8 decimals)
+            state: ListingState.LISTED
         });
-        emit GigCreated(nextGigId, _seller, msg.sender, _price);
-        nextGigId++;
+
+        emit AssetListed(tokenId, msg.sender, priceInTinybars);
+        console.log("Seller %s has listed Token ID %s for %s tinybars", msg.sender, tokenId, priceInTinybars);
     }
 
-    function fundGig(uint256 _gigId) external payable {
-        Gig storage gig = gigs[_gigId];
-        require(msg.sender == gig.buyer, "Only the buyer can fund this gig.");
-        require(msg.value == gig.price, "You must send the exact price of the gig.");
-        require(gig.state == State.AWAITING_PAYMENT, "This gig is not awaiting payment.");
+    function fundEscrow(uint256 tokenId) external payable {
+        Listing storage listing = listings[tokenId];
+        require(listing.state == ListingState.LISTED, "Escrow: Asset is not listed for sale.");
+        require(msg.value == listing.price, "Escrow: Incorrect payment amount.");
 
-        gig.state = State.AWAITING_DELIVERY;
-        emit Funded(_gigId, msg.sender);
+        listing.buyer = msg.sender;
+        listing.state = ListingState.FUNDED;
+
+        emit EscrowFunded(tokenId, msg.sender);
+        console.log("Buyer %s has funded the escrow for Token ID %s", msg.sender, tokenId);
     }
 
-    function confirmDelivery(uint256 _gigId) external {
-        Gig storage gig = gigs[_gigId];
-        require(msg.sender == gig.buyer, "Only the buyer can confirm delivery.");
-        require(gig.state == State.AWAITING_DELIVERY, "This gig is not awaiting delivery confirmation.");
+    function confirmDelivery(uint256 tokenId) external {
+        Listing storage listing = listings[tokenId];
+        IERC721 assetToken = IERC721(assetTokenAddress);
 
-        gig.state = State.COMPLETE;
-        (bool success, ) = gig.seller.call{value: gig.price}("");
-        require(success, "HBAR transfer to seller failed.");
-        emit Confirmed(_gigId, msg.sender);
+        require(msg.sender == listing.buyer, "Escrow: Only the buyer can confirm delivery.");
+        require(listing.state == ListingState.FUNDED, "Escrow: Escrow is not funded.");
+
+        listing.state = ListingState.SOLD;
+
+        // 1. Transfer HBAR to the seller
+        (bool sent, ) = payable(listing.seller).call{value: listing.price}("");
+        require(sent, "Escrow: Failed to send HBAR to seller.");
+        console.log("HBAR sent to seller %s", listing.seller);
+
+        // 2. Transfer NFT to the buyer
+        assetToken.safeTransferFrom(listing.seller, listing.buyer, tokenId);
+        console.log("Asset NFT %s transferred to buyer %s", tokenId, listing.buyer);
+
+        emit SaleCompleted(tokenId, listing.seller, listing.buyer);
     }
 
-    function cancelGig(uint256 _gigId) external {
-        Gig storage gig = gigs[_gigId];
-        require(msg.sender == gig.buyer || msg.sender == gig.seller, "Only the buyer or seller can cancel.");
-        require(gig.state != State.COMPLETE, "Cannot cancel a completed gig.");
+    function cancelListing(uint256 tokenId) external {
+        Listing storage listing = listings[tokenId];
+        require(msg.sender == listing.seller, "Escrow: Only the seller can cancel a listing.");
+        require(listing.state == ListingState.LISTED, "Escrow: Listing is not in a cancelable state.");
 
-        if (gig.state == State.AWAITING_DELIVERY) {
-            // If the gig was already funded, refund the buyer.
-            (bool success, ) = gig.buyer.call{value: gig.price}("");
-            require(success, "HBAR refund to buyer failed.");
-        }
+        listing.state = ListingState.CANCELED;
+        emit ListingCanceled(tokenId);
+        console.log("Seller %s has canceled the listing for Token ID %s", msg.sender, tokenId);
+    }
 
-        gig.state = State.CANCELED;
-        emit Canceled(_gigId, msg.sender);
+    function refundBuyer(uint256 tokenId) external {
+        Listing storage listing = listings[tokenId];
+        require(msg.sender == listing.buyer, "Escrow: Only the buyer can request a refund under specific conditions.");
+        require(listing.state == ListingState.FUNDED, "Escrow: Asset is not funded.");
+
+        // NOTE: This is a simplified refund logic. A real-world scenario would need
+        // a more robust dispute resolution mechanism. For this test, we assume the
+        // seller has gone AWOL and the buyer can reclaim funds.
+
+        listing.state = ListingState.CANCELED;
+
+        (bool sent, ) = payable(listing.buyer).call{value: listing.price}("");
+        require(sent, "Escrow: Failed to refund HBAR to buyer.");
+
+        emit ListingCanceled(tokenId); // Re-using this event for simplicity
+        console.log("Funds for Token ID %s refunded to buyer %s", tokenId, msg.sender);
     }
 }
