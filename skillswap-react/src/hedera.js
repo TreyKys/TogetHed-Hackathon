@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 export const escrowContractAddress = "0xEB94FF870ff27d2Ee186278bE202083B116D52b6";
 export const assetTokenContractAddress = "0x6330F12Ec109CA3fb8B8104c9542bB005372c8A8";
 
-// --- 2. CONTRACT ABIs (from your file) ---
+// --- 2. CONTRACT ABIs (Corrected) ---
 export const escrowContractABI = [
   {
     "inputs": [
@@ -217,6 +217,7 @@ export const escrowContractABI = [
     "type": "function"
   }
 ];
+
 export const assetTokenContractABI = [
   {
     "inputs": [],
@@ -422,7 +423,8 @@ export const assetTokenContractABI = [
     "inputs": [
       {
         "indexed": true,
-        "internalType":m": "from",
+        "internalType": "address", // ✅***FIX 1: Corrected "internalType":m" and added "name"***
+        "name": "from",
         "type": "address"
       },
       {
@@ -623,7 +625,7 @@ export const assetTokenContractABI = [
     "name": "ownerOf",
     "outputs": [
       {
-        "internalType":A": "address",
+        "internalType": "address", // ✅***FIX 2: Corrected "internalType":A"***
         "name": "",
         "type": "address"
       }
@@ -748,7 +750,7 @@ export const assetTokenContractABI = [
       {
         "internalType": "bool",
         "name": "",
-        "type": "bool"
+        "type":Z "bool"
       }
     ],
     "stateMutability": "view",
@@ -801,7 +803,7 @@ export const assetTokenContractABI = [
       {
         "internalType": "uint256",
         "name": "tokenId",
-        "type":E "uint256"
+        "type": "uint256" // ✅***FIX 3: Corrected "type":E"***
       }
     ],
     "name": "transferFrom",
