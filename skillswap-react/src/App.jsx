@@ -3,13 +3,10 @@ import './App.css';
 
 import SignClient from "@walletconnect/sign-client";
 import { WalletConnectModal } from "@walletconnect/modal";
-import { 
+import {
   TransferTransaction,
   Hbar
 } from "@hashgraph/sdk";
-
-// NOTE: No need to import Contract-related SDKs for this simple transfer test.
-// We will add them back when we work on the Escrow.sol calls.
 
 const projectId = "2798ba475f686a8e0ec83cc2cceb095b";
 
@@ -24,8 +21,11 @@ function App() {
   useEffect(() => {
     async function initialize() {
       try {
+        // ✅ **THE FIX IS HERE** ✅
         const client = await SignClient.init({
           projectId: projectId,
+          // This line explicitly defines the communication server, resolving protocol errors.
+          relayUrl: "wss://relay.walletconnect.com",
           metadata: {
             name: "Integro Marketplace",
             description: "A skill marketplace on Hedera",
@@ -33,7 +33,7 @@ function App() {
             icons: [],
           },
         });
-        
+
         const wcModal = new WalletConnectModal({
           projectId: projectId,
           chains: ["hedera:testnet"],
@@ -111,7 +111,6 @@ function App() {
     }
   };
 
-  // *** TRANSACTION FUNCTION WITH ADDED DEBUGGING ***
   const handleCreateTestGig = async () => {
     if (!signClient || !accountId) {
       alert("Please connect wallet first.");
@@ -120,38 +119,24 @@ function App() {
 
     setIsTransactionLoading(true);
     setStatus("🚀 Starting transaction...");
-    
+
     try {
-      // Step 1: Get session and ADD LOGGING
       const sessionKeys = Array.from(signClient.session.keys);
       if (sessionKeys.length === 0) throw new Error("No active wallet session");
-      
       const session = signClient.session.get(sessionKeys[0]);
-      
-      // =================================================================
-      // 🕵️‍♂️ CRITICAL DEBUGGING LOGS 🕵️‍♂️
-      console.log("Found Active Session:", session);
-      // =================================================================
-
       if (!session?.topic) throw new Error("Invalid session or missing topic");
 
       setStatus("📝 Building transaction...");
-
-      // Step 2: Create a SIMPLE test transaction
       const transaction = new TransferTransaction()
-        .addHbarTransfer(accountId, new Hbar(-1)) 
-        .addHbarTransfer("0.0.3", new Hbar(1)) // Hedera Treasury Account
+        .addHbarTransfer(accountId, new Hbar(-1))
+        .addHbarTransfer("0.0.3", new Hbar(1))
         .setTransactionMemo("Integro test transaction")
         .setMaxTransactionFee(new Hbar(2));
 
       setStatus("💾 Converting to bytes...");
-
-      // Step 3: Convert to bytes
       const transactionBytes = await transaction.toBytes();
-      
-      setStatus("📤 Sending to HashPack...");
 
-      // Step 4: WalletConnect request
+      setStatus("📤 Sending to HashPack...");
       const result = await signClient.request({
         topic: session.topic,
         chainId: "hedera:testnet",
@@ -163,7 +148,6 @@ function App() {
         }
       });
 
-      // Step 5: Handle response
       if (result?.transactionId) {
         setStatus("✅ Test transaction successful!");
         alert(`🎉 Success! TX: ${result.transactionId}`);
@@ -182,6 +166,7 @@ function App() {
     }
   };
 
+  // No changes to JSX or Styles below this line
   return (
     <div className="container">
       <div className="header"><h1>Integro</h1><p>Powered by Hedera</p></div>
