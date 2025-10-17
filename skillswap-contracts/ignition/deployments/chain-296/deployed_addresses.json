@@ -1,4 +1,6 @@
 {
   "AssetTokenModule#AssetToken": "0x5458d6964b3ED0C83Bb7d96AFE927D813A5DDC0D",
-  "EscrowModule#Escrow": "0xaB88Af4647228099fBd2904C25A6feb657beb19a"
+  "EscrowModule#Escrow": "0xaB88Af4647228099fBd2904C25A6feb657beb19a",
+  "DeployModule#AssetToken": "0x6330F12Ec109CA3fb8B8104c9542bB005372c8A8",
+  "DeployModule#Escrow": "0xEB94FF870ff27d2Ee186278bE202083B116D52b6"
 }

@@ -1,87 +1,35 @@
 import { ethers } from "ethers";
 
 // --- 1. LIVE CONTRACT ADDRESSES (Updated) ---
-export const escrowContractAddress = "0xaB88Af4647228099fBd2904C25A6feb657beb19a";
-export const assetTokenContractAddress = "0x5458d6964b3ED0C83Bb7d96AFE927D813A5DDC0D";
+export const escrowContractAddress = "0xEB94FF870ff27d2Ee186278bE202083B116D52b6";
+export const assetTokenContractAddress = "0x6330F12Ec109CA3fb8B8104c9542bB005372c8A8";
 
 // --- 2. CONTRACT BLUEPRINTS (ABIs) ---
 export const escrowContractABI = [
   {
-    "anonymous": false,
     "inputs": [
       {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "gigId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
         "internalType": "address",
-        "name": "canceledBy",
+        "name": "_assetTokenAddress",
         "type": "address"
       }
     ],
-    "name": "Canceled",
-    "type": "event"
+    "stateMutability": "nonpayable",
+    "type": "constructor"
   },
   {
     "anonymous": false,
     "inputs": [
       {
-        "indexed": false,
+        "indexed": true,
         "internalType": "uint256",
-        "name": "gigId",
+        "name": "tokenId",
         "type": "uint256"
       },
       {
-        "indexed": false,
-        "internalType": "address",
-        "name": "buyer",
-        "type": "address"
-      }
-    ],
-    "name": "Confirmed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "gigId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "buyer",
-        "type": "address"
-      }
-    ],
-    "name": "Funded",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "gigId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
+        "indexed": true,
         "internalType": "address",
         "name": "seller",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "buyer",
         "type": "address"
       },
       {
@@ -91,18 +39,88 @@ export const escrowContractABI = [
         "type": "uint256"
       }
     ],
-    "name": "GigCreated",
+    "name": "AssetListed",
     "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      }
+    ],
+    "name": "EscrowFunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ListingCanceled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "seller",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      }
+    ],
+    "name": "SaleCompleted",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "assetTokenAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_gigId",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "name": "cancelGig",
+    "name": "cancelListing",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -111,7 +129,7 @@ export const escrowContractABI = [
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_gigId",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
@@ -123,32 +141,32 @@ export const escrowContractABI = [
   {
     "inputs": [
       {
-        "internalType": "address payable",
-        "name": "_seller",
-        "type": "address"
-      },
-      {
         "internalType": "uint256",
-        "name": "_price",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "name": "createGig",
+    "name": "fundEscrow",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_gigId",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "priceInTinybars",
         "type": "uint256"
       }
     ],
-    "name": "fundGig",
+    "name": "listAsset",
     "outputs": [],
-    "stateMutability": "payable",
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -159,15 +177,15 @@ export const escrowContractABI = [
         "type": "uint256"
       }
     ],
-    "name": "gigs",
+    "name": "listings",
     "outputs": [
       {
-        "internalType": "address payable",
+        "internalType": "address",
         "name": "seller",
         "type": "address"
       },
       {
-        "internalType": "address payable",
+        "internalType": "address",
         "name": "buyer",
         "type": "address"
       },
@@ -177,7 +195,7 @@ export const escrowContractABI = [
         "type": "uint256"
       },
       {
-        "internalType": "enum Escrow.State",
+        "internalType": "enum Escrow.ListingState",
         "name": "state",
         "type": "uint8"
       }
@@ -186,16 +204,16 @@ export const escrowContractABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "nextGigId",
-    "outputs": [
+    "inputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "name": "refundBuyer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   }
 ];
@@ -445,6 +463,35 @@ export const assetTokenContractABI = [
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "assetData",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "assetType",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "quality",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "location",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "owner",
         "type": "address"
@@ -475,6 +522,42 @@ export const assetTokenContractABI = [
         "internalType": "address",
         "name": "",
         "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAssetData",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "assetType",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "quality",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "location",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct AssetToken.AssetData",
+        "name": "",
+        "type": "tuple"
       }
     ],
     "stateMutability": "view",
@@ -562,6 +645,21 @@ export const assetTokenContractABI = [
         "internalType": "address",
         "name": "to",
         "type": "address"
+      },
+      {
+        "internalType": "string",
+        "name": "assetType",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "quality",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "location",
+        "type": "string"
       }
     ],
     "name": "safeMint",
