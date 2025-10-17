@@ -59,44 +59,50 @@ function App() {
           chains: ["hedera:testnet"],
         });
 
+        setSignClient(client);
+        setModal(wcModal);
+
         // Setup Ethers.js provider for Hedera Testnet
         const hederaProvider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
         setProvider(hederaProvider);
 
-        const onSessionConnect = async (session) => {
-          const connectedAccountId = session.namespaces.hedera.accounts[0].split(':')[2];
-          setAccountId(connectedAccountId);
-          setStatus("⏳ Resolving EVM address...");
-
-          const fetchedEvmAddress = await getEvmAddress(connectedAccountId);
-          if (fetchedEvmAddress) {
-            setEvmAddress(fetchedEvmAddress);
-            const hederaSigner = await hederaProvider.getSigner(fetchedEvmAddress);
-            setSigner(hederaSigner);
-            setStatus(`✅ Connected as: ${connectedAccountId}`);
-          }
-        };
-
-        client.on("session_connect", (event) => onSessionConnect(event.params));
-
+        // Check for existing sessions
         if (client.session.length > 0) {
           const lastSession = client.session.get(client.session.keys.at(-1));
-          onSessionConnect(lastSession);
+          await onSessionConnect(lastSession, hederaProvider);
         }
 
-        setSignClient(client);
-        setModal(wcModal);
-        if(!accountId) setStatus("Ready to connect");
-        setIsLoading(false);
-
+        setStatus("Ready to connect");
       } catch (error) {
         console.error("Initialization failed:", error);
-        setStatus(`❌ Init error: ${error.message}`);
+        if (error.message.includes("A WalletConnect Core is already initialized")) {
+          // This is a hot-reload issue in dev, not a critical bug.
+          // We can just set the status and let the user proceed.
+          setStatus("Ready to connect");
+        } else {
+          setStatus(`❌ Init error: ${error.message}`);
+        }
+      } finally {
         setIsLoading(false);
       }
     }
+
     initialize();
-  }, [accountId]);
+  }, []); // <-- Empty dependency array ensures this runs only ONCE.
+
+  const onSessionConnect = async (session, hederaProvider) => {
+    const connectedAccountId = session.namespaces.hedera.accounts[0].split(':')[2];
+    setAccountId(connectedAccountId);
+    setStatus("⏳ Resolving EVM address...");
+
+    const fetchedEvmAddress = await getEvmAddress(connectedAccountId);
+    if (fetchedEvmAddress) {
+      setEvmAddress(fetchedEvmAddress);
+      const hederaSigner = await hederaProvider.getSigner(fetchedEvmAddress);
+      setSigner(hederaSigner);
+      setStatus(`✅ Connected as: ${connectedAccountId}`);
+    }
+  };
 
   // --- Address Resolution Helper ---
   const getEvmAddress = async (accountId) => {
@@ -139,7 +145,8 @@ function App() {
 
       if (uri) {
         await modal.openModal({ uri });
-        await approval();
+        const session = await approval();
+        await onSessionConnect(session, provider);
         modal.closeModal();
       }
     } catch (error) {
