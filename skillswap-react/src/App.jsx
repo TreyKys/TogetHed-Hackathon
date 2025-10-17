@@ -1,153 +1,208 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
+import { ethers } from "ethers";
 import './App.css';
-import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk'; // For generating new keys
+
+// Import contract addresses and ABIs
 import {
-  assetTokenContract,
-  escrowContract,
+  escrowContractAddress,
   assetTokenContractAddress,
-  getProvider
-} from './hedera.js';
+  escrowContractABI,
+  assetTokenContractABI,
+  getContract
+} from "./hedera.js";
+
+// --- Environment Variables ---
+// Using Vite's import.meta.env for environment variables
+const MY_ACCOUNT_ID = import.meta.env.VITE_MY_ACCOUNT_ID;
+const MY_PRIVATE_KEY = import.meta.env.VITE_MY_PRIVATE_KEY;
 
 function App() {
-  const [status, setStatus] = useState("Welcome. Please create your secure vault.");
-  const [isProcessing, setIsProcessing] = useState(false);
+  // --- Wallet & Connection State ---
   const [signer, setSigner] = useState(null);
-  const [accountId, setAccountId] = useState(null); // Will hold the user's EVM address
-  const [flowState, setFlowState] = useState('MINT');
+  const [provider, setProvider] = useState(null);
+
+  // --- UI & Loading State ---
+  const [status, setStatus] = useState("Initializing...");
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
+
+  // --- Golden Path State ---
+  const [flowState, setFlowState] = useState("INITIAL"); // INITIAL, MINTED, LISTED, FUNDED, SOLD
   const [tokenId, setTokenId] = useState(null);
 
-  // --- 1. Check for an existing wallet on load ---
+  // --- Initialize Ethers.js Provider & Signer ---
   useEffect(() => {
-    const loadWallet = async () => {
-      const storedKey = localStorage.getItem('integro-private-key');
-      if (storedKey) {
-        setStatus("Restoring your secure vault...");
-        const provider = getProvider();
-        const loadedSigner = new ethers.Wallet(storedKey, provider);
-        const userAddress = await loadedSigner.getAddress();
-        
-        setSigner(loadedSigner);
-        setAccountId(userAddress);
-        setStatus(`✅ Vault restored. Welcome back, ${userAddress.slice(0, 6)}...`);
+    async function initialize() {
+      setStatus("Initializing Hedera connection...");
+      if (!MY_ACCOUNT_ID || !MY_PRIVATE_KEY) {
+        setStatus("❌ Environment variables VITE_MY_ACCOUNT_ID and VITE_MY_PRIVATE_KEY must be set.");
+        console.error("VITE_MY_ACCOUNT_ID and VITE_MY_PRIVATE_KEY must be set in your .env file.");
+        return;
       }
-    };
-    loadWallet();
+
+      try {
+        const hederaProvider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
+        setProvider(hederaProvider);
+
+        // Create a wallet instance from the private key
+        const hederaSigner = new ethers.Wallet(MY_PRIVATE_KEY, hederaProvider);
+        setSigner(hederaSigner);
+
+        setStatus(`✅ Connected as: ${MY_ACCOUNT_ID}`);
+        setFlowState("INITIAL");
+      } catch (error) {
+        console.error("Initialization failed:", error);
+        setStatus(`❌ Init error: ${error.message}`);
+      }
+    }
+    initialize();
   }, []);
 
-  // --- 2. Create a new wallet (The "Vault") ---
-  const handleCreateVault = async () => {
-    setIsProcessing(true);
-    setStatus("Generating your secure keys...");
+  // --- Golden Path Transaction Handlers ---
+
+  const handleMint = async () => {
+    if (!signer) return alert("Signer not initialized.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Minting RWA NFT...");
     try {
-      // Generate new keys
-      const newPrivateKey = PrivateKey.generateECDSA();
-      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
-      
-      // Save to localStorage (our "Secure Enclave simulation")
-      localStorage.setItem('integro-private-key', newPrivateKeyHex);
+      const assetTokenContract = getContract(assetTokenContractAddress, assetTokenContractABI, signer);
+      // Minting the NFT to our own account for the demo
+      const tx = await assetTokenContract.safeMint(
+        signer.address,
+        "Yam Harvest Future",
+        "Grade A",
+        "Ikorodu, Nigeria"
+      );
 
-      // Create the signer
-      const provider = getProvider();
-      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
-      const userAddress = await newSigner.getAddress();
+      const receipt = await tx.wait();
+      const transferEvent = receipt.events?.find(event => event.event === 'Transfer');
+      if (!transferEvent) throw new Error("Token ID not found in transaction receipt.");
 
-      setSigner(newSigner);
-      setAccountId(userAddress);
-      
-      setStatus(`✅ Secure vault created! Address: ${userAddress}`);
+      const mintedTokenId = transferEvent.args.tokenId.toString();
+      setTokenId(mintedTokenId);
+      setFlowState("MINTED");
+      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+
     } catch (error) {
-      setStatus(`❌ Vault creation failed: ${error.message}`);
+      console.error("Minting failed:", error);
+      setStatus(`❌ Minting Failed: ${error.message}`);
     } finally {
-      setIsProcessing(false);
+      setIsTransactionLoading(false);
     }
   };
 
-  // --- 3. Transaction Logic (Golden Path) ---
-  const handleMint = async () => {
-    if (!signer) return alert("Vault not ready.");
-    setIsProcessing(true);
-    setStatus("🚀 Minting RWA NFT...");
-    try {
-      const userAddress = await signer.getAddress();
-      const tx = await assetTokenContract.connect(signer).safeMint(userAddress, "Yam Harvest Future", "Grade A", "Ikorodu");
-      const receipt = await tx.wait();
-      const mintEvent = receipt.logs.find(log => log.eventName === 'Transfer');
-      if (!mintEvent) throw new Error("Mint event not found.");
-      const mintedTokenId = mintEvent.args[2].toString();
-      setTokenId(mintedTokenId);
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
-      setFlowState('LIST');
-    } catch (error) { setStatus(`❌ Mint failed: ${error.message}`); } finally { setIsProcessing(false); }
-  };
-  
   const handleList = async () => {
-    if (!signer) return alert("Vault not ready.");
-    setIsProcessing(true);
-    setStatus(" approving and listing NFT...");
+    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Listing NFT for sale...");
     try {
-      const approveTx = await assetTokenContract.connect(signer).approve(escrowContract.target, tokenId);
+      const assetTokenContract = getContract(assetTokenContractAddress, assetTokenContractABI, signer);
+      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
+
+      setStatus("⏳ Approving Escrow contract...");
+      const approveTx = await assetTokenContract.approve(escrowContractAddress, tokenId);
       await approveTx.wait();
-      setStatus("✅ Approval successful. Now listing...");
-      const priceInHbar = 50;
-      const priceInTinybar = ethers.parseUnits(priceInHbar.toString(), 8);
-      const listTx = await escrowContract.connect(signer).listAsset(assetTokenContractAddress, tokenId, priceInTinybar);
+      setStatus("✅ Approval successful!");
+
+      setStatus("⏳ Listing on marketplace...");
+      const priceInTinybars = BigInt(50 * 1e8);
+      const listTx = await escrowContract.listAsset(tokenId, priceInTinybars);
       await listTx.wait();
-      setStatus(`✅ Listed NFT #${tokenId} for ${priceInHbar} HBAR.`);
-      setFlowState('BUY');
-    } catch (error) { setStatus(`❌ Listing failed: ${error.message}`); } finally { setIsProcessing(false); }
+
+      setFlowState("LISTED");
+      setStatus(`✅ NFT Listed for 50 HBAR!`);
+
+    } catch (error) {
+      console.error("Listing failed:", error);
+      setStatus(`❌ Listing Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
   };
 
   const handleBuy = async () => {
-    if (!signer) return alert("Vault not ready.");
-    setIsProcessing(true);
-    setStatus("💸 Funding the escrow...");
+    if (!signer || !tokenId) return alert("No item listed for sale.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const priceInHbar = 50;
-      const priceInWei = ethers.parseEther(priceInHbar.toString());
-      const fundTx = await escrowContract.connect(signer).fundEscrow(tokenId, { value: priceInWei });
+      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
+      const priceInWeibars = ethers.parseEther("50");
+
+      const fundTx = await escrowContract.fundEscrow(tokenId, {
+        value: priceInWeibars,
+        gasLimit: 1000000
+      });
       await fundTx.wait();
-      setStatus(`✅ Escrow for NFT #${tokenId} funded!`);
-      setFlowState('CONFIRM');
-    } catch (error) { setStatus(`❌ Funding failed: ${error.message}`); } finally { setIsProcessing(false); }
+
+      setFlowState("FUNDED");
+      setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
+
+    } catch (error) {
+      console.error("Purchase failed:", error);
+      setStatus(`❌ Purchase Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
   };
 
   const handleConfirm = async () => {
-    if (!signer) return alert("Vault not ready.");
-    setIsProcessing(true);
-    setStatus("🤝 Confirming delivery and settling...");
+    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Confirming Delivery...");
     try {
-      const confirmTx = await escrowContract.connect(signer).confirmDelivery(tokenId);
+      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
+      const confirmTx = await escrowContract.confirmDelivery(tokenId, {
+        gasLimit: 1000000
+      });
       await confirmTx.wait();
-      setStatus(`🎉 Success! Transaction for NFT #${tokenId} is complete.`);
-      setFlowState('DONE');
-    } catch (error) { setStatus(`❌ Confirmation failed: ${error.message}`); } finally { setIsProcessing(false); }
+
+      setFlowState("SOLD");
+      setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
+
+    } catch (error) {
+      console.error("Confirmation failed:", error);
+      setStatus(`❌ Confirmation Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
   };
 
-  // --- 4. The UI ---
+
   return (
     <div className="container">
-      <div className="header"><h1>Integro</h1><p>Powered by Hedera</p></div>
+      <div className="header"><h1>Integro Marketplace</h1><p>The Golden Path Demo (Direct Signing)</p></div>
       <div className="page-container">
         <div className="card">
-          <h3>Welcome to Integro</h3>
-          <div className="status-message status-info"><strong>Status:</strong> {status}</div>
-          {!signer && (
-            <button onClick={handleCreateVault} disabled={isProcessing} className="hedera-button">
-              {isProcessing ? "Creating..." : "Create Your Secure Vault"}
-            </button>
-          )}
+          <h3>Connection Status</h3>
+          <div className={`status-message ${status.includes('✅') ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
+            {status}
+          </div>
         </div>
-        
+
         {signer && (
           <div className="card">
-            <h3>Golden Path User Flow</h3>
-            <p>You are now in control of your on-chain identity.</p>
-            <button onClick={handleMint} disabled={isProcessing || flowState !== 'MINT'} className="hedera-button">{isProcessing && flowState === 'MINT' ? 'Minting...' : '1. Mint RWA NFT'}</button>
-            <button onClick={handleList} disabled={isProcessing || flowState !== 'LIST'} className="hedera-button">{isProcessing && flowState === 'LIST' ? 'Listing...' : '2. List NFT for 50 HBAR'}</button>
-            <button onClick={handleBuy} disabled={isProcessing || flowState !== 'BUY'} className="hedera-button">{isProcessing && flowState === 'BUY' ? 'Funding...' : '3. Buy Now (Fund Escrow)'}</button>
-            <button onClick={handleConfirm} disabled={isProcessing || flowState !== 'CONFIRM'} className="hedera-button">{isProcessing && flowState === 'CONFIRM' ? 'Confirming...' : '4. Confirm Delivery'}</button>
-            {flowState === 'DONE' && (<div className="status-message status-success" style={{marginTop: '15px'}}>✅ Demo Complete!</div>)}
+            <h3>Golden Path Walkthrough</h3>
+            <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+
+            <div className="button-group">
+              <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
+                1. Mint RWA NFT
+              </button>
+              <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
+                2. List NFT for 50 HBAR
+              </button>
+              <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
+                3. Buy Now (Fund Escrow)
+              </button>
+              <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
+                4. Confirm Delivery
+              </button>
+            </div>
+
+            {flowState === 'SOLD' && (
+              <div className="success-message">
+                🎉 Congratulations! The entire flow is complete.
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -155,8 +210,26 @@ function App() {
   );
 }
 
+// Styles remain the same
 function CustomStyles() {
-  return (<style>{`.container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); overflow: hidden; display: flex; flex-direction: column; font-family: Arial, sans-serif;} .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; } .header h1 { font-size: 28px; margin: 0; } .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; } .page-container { padding: 20px; } .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 15px;} .hedera-button { background: #2DD87F; color: black; border: none; padding: 14px; border-radius: 12px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 15px; font-weight: 600; transition: background 0.3s;} .hedera-button:hover:not(:disabled) { background: #25b366; } .hedera-button:disabled { background: #cccccc; cursor: not-allowed; } .hedera-button.disconnect { background: #ff4444; color: white; } .hedera-button.disconnect:hover { background: #cc3333; } .status-message { padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; word-break: break-word; } .status-info { background: #e3f2fd; color: #1565c0; } .status-success { background: #e8f5e8; color: #2e7d32; } .status-error { background: #ffebee; color: #c62828; }`}</style>);
+  return (<style>{`
+    .container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); overflow: hidden; display: flex; flex-direction: column; font-family: Arial, sans-serif;}
+    .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; }
+    .header h1 { font-size: 28px; margin: 0; }
+    .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+    .page-container { padding: 20px; }
+    .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 15px;}
+    .hedera-button { background: #2DD87F; color: black; border: none; padding: 14px; border-radius: 12px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; font-weight: 600; transition: background 0.3s, opacity 0.3s;}
+    .hedera-button:hover:not(:disabled) { background: #25b366; }
+    .hedera-button:disabled { background: #cccccc; cursor: not-allowed; opacity: 0.6; }
+    .status-message { padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; word-wrap: break-word; }
+    .status-info { background: #e3f2fd; color: #1565c0; }
+    .status-success { background: #e8f5e8; color: #2e7d32; }
+    .status-error { background: #ffebee; color: #c62828; }
+    .flow-status { text-align: center; font-size: 14px; color: #333; background-color: #f0f0f0; padding: 8px; border-radius: 8px; margin-bottom: 15px; }
+    .button-group button { margin-bottom: 8px; }
+    .success-message { text-align: center; padding: 15px; background-color: #e8f5e8; color: #2e7d32; border-radius: 8px; margin-top: 15px; font-weight: bold; }
+  `}</style>);
 }
 
 function MainApp() { return (<><CustomStyles /><App /></>); }

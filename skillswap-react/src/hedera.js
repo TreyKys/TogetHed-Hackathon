@@ -1,10 +1,10 @@
 import { ethers } from "ethers";
 
-// --- 1. LIVE CONTRACT ADDRESSES (from your file) ---
+// --- 1. LIVE CONTRACT ADDRESSES (Updated) ---
 export const escrowContractAddress = "0xEB94FF870ff27d2Ee186278bE202083B116D52b6";
 export const assetTokenContractAddress = "0x6330F12Ec109CA3fb8B8104c9542bB005372c8A8";
 
-// --- 2. CONTRACT ABIs (Corrected) ---
+// --- 2. CONTRACT BLUEPRINTS (ABIs) ---
 export const escrowContractABI = [
   {
     "inputs": [
@@ -217,7 +217,6 @@ export const escrowContractABI = [
     "type": "function"
   }
 ];
-
 export const assetTokenContractABI = [
   {
     "inputs": [],
@@ -423,7 +422,7 @@ export const assetTokenContractABI = [
     "inputs": [
       {
         "indexed": true,
-        "internalType": "address", // ✅***FIX 1: Corrected "internalType":m" and added "name"***
+        "internalType": "address",
         "name": "from",
         "type": "address"
       },
@@ -625,7 +624,7 @@ export const assetTokenContractABI = [
     "name": "ownerOf",
     "outputs": [
       {
-        "internalType": "address", // ✅***FIX 2: Corrected "internalType":A"***
+        "internalType": "address",
         "name": "",
         "type": "address"
       }
@@ -750,7 +749,7 @@ export const assetTokenContractABI = [
       {
         "internalType": "bool",
         "name": "",
-        "type":Z "bool"
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -803,7 +802,7 @@ export const assetTokenContractABI = [
       {
         "internalType": "uint256",
         "name": "tokenId",
-        "type": "uint256" // ✅***FIX 3: Corrected "type":E"***
+        "type": "uint256"
       }
     ],
     "name": "transferFrom",
@@ -826,17 +825,9 @@ export const assetTokenContractABI = [
   }
 ];
 
-// --- 3. Ethers.js Provider Setup ---
-const hederaTestnetRpcUrl = "https://testnet.hashio.io/api";
-const provider = new ethers.JsonRpcProvider(hederaTestnetRpcUrl);
-
-// Export a function to get the provider
-export const getProvider = () => {
-  return provider;
+// --- 3. CONNECTION HELPER ---
+// This function helps our app connect to the smart contracts.
+// It requires a "signer" which we will get from the user's connected wallet.
+export const getContract = (address, abi, signer) => {
+  return new ethers.Contract(address, abi, signer);
 };
-
-// --- 4. Ready-to-use Contract Instances (Base Blueprints) ---
-// These are exported WITHOUT a signer. The App.jsx will connect them
-// to the user's signer when it's time to send a transaction.
-export const escrowContract = new ethers.Contract(escrowContractAddress, escrowContractABI, provider);
-export const assetTokenContract = new ethers.Contract(assetTokenContractAddress, assetTokenContractABI, provider);
