@@ -10,7 +10,7 @@ import {
 } from './hedera.js';
 
 function App() {
-  const [status, setStatus] = = useState("Welcome. Please create your secure vault.");
+  const [status, setStatus] = useState("Welcome. Please create your secure vault.");
   const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null); // Will hold the user's EVM address
