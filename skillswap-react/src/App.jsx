@@ -8,7 +8,8 @@ import {
     getProvider,
     assetTokenContract,
     escrowContract,
-    escrowContractAddress
+    escrowContractAddress,
+    assetTokenContractAddress
 } from "./hedera.js";
 
 function App() {
@@ -63,7 +64,7 @@ function App() {
       const hederaSigner = new ethers.Wallet(newPrivateKeyHex, provider);
       setSigner(hederaSigner);
 
-      setStatus(`✅ Vault created! Your new address: ${hederaSigner.address}`);
+      setStatus(`✅ Vault created! PLEASE FUND THIS NEW ACCOUNT with test HBAR from a faucet to activate it: ${hederaSigner.address}`);
       console.log("New vault created and stored in localStorage.");
     } catch (error) {
         console.error("Vault creation failed:", error);
@@ -78,18 +79,25 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
-      const userAssetTokenContract = assetTokenContract.connect(signer);
-      const tx = await userAssetTokenContract.safeMint(
+      // Manually encode the function call to ensure it's sent correctly
+      const mintTxData = assetTokenContract.interface.encodeFunctionData("safeMint", [
         signer.address,
         "Yam Harvest Future",
         "Grade A",
         "Ikorodu, Nigeria",
-        {
-            gasLimit: 1000000 // Adding a generous gas limit to bypass estimation issues
-        }
-      );
+      ]);
 
-      const receipt = await tx.wait();
+      // Construct the raw transaction object
+      const tx = {
+        to: assetTokenContractAddress,
+        data: mintTxData,
+        gasLimit: 1000000,
+      };
+
+      // Send the raw transaction
+      const txResponse = await signer.sendTransaction(tx);
+      const receipt = await txResponse.wait();
+
 
       // Ethers v6 event parsing: Find the Transfer event log and parse it
       const transferEventInterface = new ethers.Interface(assetTokenContract.abi);
@@ -114,7 +122,10 @@ function App() {
       console.error("Minting failed:", error);
       if (error.code === 'INSUFFICIENT_FUNDS') {
           setStatus(`❌ Minting Failed: Insufficient HBAR balance. Please fund this address on the Hedera Testnet: ${signer.address}`);
-      } else {
+      } else if (error.code === -32001 || (error.message && error.message.includes("Requested resource not found"))) {
+          setStatus(`❌ Minting Failed: Your account is not yet active. Please fund it with Testnet HBAR to activate it: ${signer.address}`);
+      }
+      else {
           setStatus(`❌ Minting Failed: ${error.message}`);
       }
     } finally {
