@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "hardhat/console.sol"; // For debugging
+import "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHederaTokenService.sol";
+import "@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol";
 
 contract AssetToken is ERC721, Ownable {
     uint256 private _nextTokenId;
@@ -38,5 +40,19 @@ contract AssetToken is ERC721, Ownable {
             location: location
         });
         console.log("Minted new Asset NFT with Token ID %s to address %s", tokenId, to);
+    }
+
+    /**
+     * @dev Associates the calling account with this token.
+     * This is a Hedera-specific function required before an account can receive the token.
+     */
+    function associate() public {
+        // The address of the HTS precompile is 0x167
+        IHederaTokenService hts = IHederaTokenService(address(0x167));
+        int response = hts.associateToken(msg.sender, address(this));
+
+        if (response != HederaResponseCodes.SUCCESS) {
+            revert("HTS association failed");
+        }
     }
 }
