@@ -83,14 +83,29 @@ function App() {
         signer.address,
         "Yam Harvest Future",
         "Grade A",
-        "Ikorodu, Nigeria"
+        "Ikorodu, Nigeria",
+        {
+            gasLimit: 1000000 // Adding a generous gas limit to bypass estimation issues
+        }
       );
 
       const receipt = await tx.wait();
-      const transferEvent = receipt.logs.find(e => e.eventName === 'Transfer');
-      if (!transferEvent) throw new Error("Token ID not found in transaction receipt.");
 
-      const mintedTokenId = transferEvent.args.tokenId.toString();
+      // Ethers v6 event parsing: Find the Transfer event log and parse it
+      const transferEventInterface = new ethers.Interface(assetTokenContract.abi);
+      const transferEventLog = receipt.logs.find(log => {
+          try {
+              const parsedLog = transferEventInterface.parseLog(log);
+              return parsedLog?.name === "Transfer";
+          } catch (error) {
+              return false;
+          }
+      });
+
+      if (!transferEventLog) throw new Error("Token ID not found in transaction receipt: Transfer event not found.");
+
+      const parsedLog = transferEventInterface.parseLog(transferEventLog);
+      const mintedTokenId = parsedLog.args.tokenId.toString();
       setTokenId(mintedTokenId);
       setFlowState("MINTED");
       setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
