@@ -14,6 +14,10 @@ import * as Contracts from ".";
 declare module "hardhat/types/runtime" {
   interface HardhatEthersHelpers extends HardhatEthersHelpersBase {
     getContractFactory(
+      name: "IHederaTokenService",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IHederaTokenService__factory>;
+    getContractFactory(
       name: "Ownable",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Ownable__factory>;
@@ -71,6 +75,11 @@ declare module "hardhat/types/runtime" {
     ): Promise<Contracts.Escrow__factory>;
 
     getContractAt(
+      name: "IHederaTokenService",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IHederaTokenService>;
+    getContractAt(
       name: "Ownable",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -142,6 +151,10 @@ declare module "hardhat/types/runtime" {
     ): Promise<Contracts.Escrow>;
 
     deployContract(
+      name: "IHederaTokenService",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IHederaTokenService>;
+    deployContract(
       name: "Ownable",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Ownable>;
@@ -198,6 +211,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Escrow>;
 
+    deployContract(
+      name: "IHederaTokenService",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IHederaTokenService>;
     deployContract(
       name: "Ownable",
       args: any[],

@@ -79,6 +79,13 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
+      // Hedera requires accounts to "associate" with a token before they can receive it.
+      setStatus("⏳ Associating token with your account...");
+      const userAssetTokenContract = assetTokenContract.connect(signer);
+      const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
+      await assocTx.wait();
+      setStatus("✅ Association successful!");
+
       // Manually encode the function call to ensure it's sent correctly
       const mintTxData = assetTokenContract.interface.encodeFunctionData("safeMint", [
         signer.address,
