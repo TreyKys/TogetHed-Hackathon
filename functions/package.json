@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@hashgraph/sdk": "^2.75.0",
+    "cors": "^2.8.5",
+    "firebase-functions": "^6.5.0"
+  }
+}

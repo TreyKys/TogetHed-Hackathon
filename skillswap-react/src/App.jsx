@@ -1,80 +1,89 @@
-import { useEffect, useState } from "react";
-import { ethers } from "ethers";
-import { PrivateKey } from "@hashgraph/sdk";
+import React, { useState, useEffect } from 'react';
 import './App.css';
-
-// Import functions and contracts from hedera.js
+import { ethers } from 'ethers';
+import { PrivateKey } from '@hashgraph/sdk';
 import {
-    getProvider,
-    assetTokenContract,
-    escrowContract,
-    escrowContractAddress,
-    assetTokenContractAddress
-} from "./hedera.js";
+  assetTokenContract,
+  escrowContract,
+  assetTokenContractAddress,
+  getProvider
+} from './hedera.js';
+
+// ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
+const cloudFunctionUrl = "https://us-central1-YOUR-PROJECT-ID.cloudfunctions.net/createAccount";
 
 function App() {
-  // --- Wallet & Connection State ---
+  const [status, setStatus] = useState("Welcome. Please create your secure vault.");
+  const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
-  const [provider, setProvider] = useState(null);
-
-  // --- UI & Loading State ---
-  const [status, setStatus] = useState("Initializing...");
+  const [accountId, setAccountId] = useState(null);
+  const [flowState, setFlowState] = useState('MINT');
+  const [tokenId, setTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
-  // --- Golden Path State ---
-  const [flowState, setFlowState] = useState("INITIAL"); // INITIAL, MINTED, LISTED, FUNDED, SOLD
-  const [tokenId, setTokenId] = useState(null);
 
-  // --- Initialize Provider and Check for Vault ---
+  // --- Check for an existing wallet on load ---
   useEffect(() => {
-    const hederaProvider = getProvider();
-    setProvider(hederaProvider);
-    setStatus("Checking for your secure vault...");
-
-    const storedKey = localStorage.getItem('integro-private-key');
-    if (storedKey) {
-      console.log("Found existing key in localStorage.");
-      try {
-        const hederaSigner = new ethers.Wallet(storedKey, hederaProvider);
-        setSigner(hederaSigner);
-        setStatus(`✅ Vault loaded. Connected as: ${hederaSigner.address}`);
-      } catch (error) {
-          console.error("Failed to load wallet from stored key:", error);
-          setStatus("❌ Error loading vault. Please create a new one.");
-          localStorage.removeItem('integro-private-key'); // Clear corrupted key
+    const loadWallet = async () => {
+      const storedKey = localStorage.getItem('integro-private-key');
+      const storedAccountId = localStorage.getItem('integro-account-id');
+      if (storedKey && storedAccountId) {
+        setStatus("Restoring your secure vault...");
+        const provider = getProvider();
+        const loadedSigner = new ethers.Wallet(storedKey, provider);
+        setSigner(loadedSigner);
+        setAccountId(storedAccountId);
+        setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
-    } else {
-      console.log("No key found in localStorage.");
-      setStatus("👋 Welcome! Please create a secure vault to begin.");
-    }
+    };
+    loadWallet();
   }, []);
 
-  // --- Vault Creation ---
+  // --- Create a new wallet via the Account Factory ---
   const handleCreateVault = async () => {
-    setStatus("🔐 Creating your secure vault...");
+    setIsProcessing(true);
+    setStatus("1/3: Generating secure keys on your device...");
     try {
-      // Generate a new Hedera-compatible ECDSA private key
+      // 1. Generate new keys on the device
       const newPrivateKey = PrivateKey.generateECDSA();
       const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
+      const newPublicKey = newPrivateKey.publicKey.toStringRaw();
 
-      // Save to localStorage (simulating a secure enclave)
+      // 2. Call our backend to create the account on Hedera
+      setStatus("2/3: Calling the Account Factory...");
+      const response = await fetch(cloudFunctionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicKey: newPublicKey }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Backend request failed.');
+      }
+      const newAccountId = data.accountId;
+
+      // 3. Save everything and create the signer
+      setStatus("3/3: Finalizing your vault...");
       localStorage.setItem('integro-private-key', newPrivateKeyHex);
+      localStorage.setItem('integro-account-id', newAccountId);
 
-      // Create a new signer
-      const hederaSigner = new ethers.Wallet(newPrivateKeyHex, provider);
-      setSigner(hederaSigner);
+      const provider = getProvider();
+      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
 
-      setStatus(`✅ Vault created! PLEASE FUND THIS NEW ACCOUNT with test HBAR from a faucet to activate it: ${hederaSigner.address}`);
-      console.log("New vault created and stored in localStorage.");
+      setSigner(newSigner);
+      setAccountId(newAccountId);
+
+      setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
     } catch (error) {
-        console.error("Vault creation failed:", error);
-        setStatus(`❌ Vault Creation Failed: ${error.message}`);
+      console.error("Vault creation failed:", error);
+      setStatus(`❌ Vault creation failed: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  // --- Golden Path Transaction Handlers (Refactored) ---
-
-  const handleMint = async () => {
+    const handleMint = async () => {
     if (!signer) return alert("Signer not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
