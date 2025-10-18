@@ -49,16 +49,25 @@ contract Escrow {
         console.log("Seller %s has listed Token ID %s for %s tinybars", msg.sender, tokenId, priceInTinybars);
     }
 
+    function convertToTinybar(uint256 weibarAmount) internal pure returns (uint256) {
+        return weibarAmount / (10**10);
+    }
+
     function fundEscrow(uint256 tokenId) external payable {
         Listing storage listing = listings[tokenId];
         require(listing.state == ListingState.LISTED, "Escrow: Asset is not listed for sale.");
-        require(msg.value == listing.price, "Escrow: Incorrect payment amount.");
+        uint256 paymentInTinybars = convertToTinybar(msg.value);
+        require(paymentInTinybars == listing.price, "Escrow: Incorrect payment amount.");
 
         listing.buyer = msg.sender;
         listing.state = ListingState.FUNDED;
 
         emit EscrowFunded(tokenId, msg.sender);
         console.log("Buyer %s has funded the escrow for Token ID %s", msg.sender, tokenId);
+    }
+
+    function convertToWeibar(uint256 tinybarAmount) internal pure returns (uint256) {
+        return tinybarAmount * (10**10);
     }
 
     function confirmDelivery(uint256 tokenId) external {
@@ -71,7 +80,8 @@ contract Escrow {
         listing.state = ListingState.SOLD;
 
         // 1. Transfer HBAR to the seller
-        (bool sent, ) = payable(listing.seller).call{value: listing.price}("");
+        uint256 priceInWeibars = convertToWeibar(listing.price);
+        (bool sent, ) = payable(listing.seller).call{value: priceInWeibars}("");
         require(sent, "Escrow: Failed to send HBAR to seller.");
         console.log("HBAR sent to seller %s", listing.seller);
 
