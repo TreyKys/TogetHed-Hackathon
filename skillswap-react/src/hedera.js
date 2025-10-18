@@ -825,9 +825,13 @@ export const assetTokenContractABI = [
   }
 ];
 
-// --- 3. CONNECTION HELPER ---
-// This function helps our app connect to the smart contracts.
-// It requires a "signer" which we will get from the user's connected wallet.
-export const getContract = (address, abi, signer) => {
-  return new ethers.Contract(address, abi, signer);
+// --- 3. Provider & Contract Instances ---
+export const getProvider = () => {
+    return new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
 };
+
+const provider = getProvider();
+
+// Export base, unsigned contract instances
+export const assetTokenContract = new ethers.Contract(assetTokenContractAddress, assetTokenContractABI, provider);
+export const escrowContract = new ethers.Contract(escrowContractAddress, escrowContractABI, provider);

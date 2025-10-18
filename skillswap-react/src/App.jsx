@@ -1,20 +1,15 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
+import { PrivateKey } from "@hashgraph/sdk";
 import './App.css';
 
-// Import contract addresses and ABIs
+// Import functions and contracts from hedera.js
 import {
-  escrowContractAddress,
-  assetTokenContractAddress,
-  escrowContractABI,
-  assetTokenContractABI,
-  getContract
+    getProvider,
+    assetTokenContract,
+    escrowContract,
+    escrowContractAddress
 } from "./hedera.js";
-
-// --- Environment Variables ---
-// Using Vite's import.meta.env for environment variables
-const MY_ACCOUNT_ID = import.meta.env.VITE_MY_ACCOUNT_ID;
-const MY_PRIVATE_KEY = import.meta.env.VITE_MY_PRIVATE_KEY;
 
 function App() {
   // --- Wallet & Connection State ---
@@ -29,44 +24,62 @@ function App() {
   const [flowState, setFlowState] = useState("INITIAL"); // INITIAL, MINTED, LISTED, FUNDED, SOLD
   const [tokenId, setTokenId] = useState(null);
 
-  // --- Initialize Ethers.js Provider & Signer ---
+  // --- Initialize Provider and Check for Vault ---
   useEffect(() => {
-    async function initialize() {
-      setStatus("Initializing Hedera connection...");
-      if (!MY_ACCOUNT_ID || !MY_PRIVATE_KEY) {
-        setStatus("❌ Environment variables VITE_MY_ACCOUNT_ID and VITE_MY_PRIVATE_KEY must be set.");
-        console.error("VITE_MY_ACCOUNT_ID and VITE_MY_PRIVATE_KEY must be set in your .env file.");
-        return;
-      }
+    const hederaProvider = getProvider();
+    setProvider(hederaProvider);
+    setStatus("Checking for your secure vault...");
 
+    const storedKey = localStorage.getItem('integro-private-key');
+    if (storedKey) {
+      console.log("Found existing key in localStorage.");
       try {
-        const hederaProvider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
-        setProvider(hederaProvider);
-
-        // Create a wallet instance from the private key
-        const hederaSigner = new ethers.Wallet(MY_PRIVATE_KEY, hederaProvider);
+        const hederaSigner = new ethers.Wallet(storedKey, hederaProvider);
         setSigner(hederaSigner);
-
-        setStatus(`✅ Connected as: ${MY_ACCOUNT_ID}`);
-        setFlowState("INITIAL");
+        setStatus(`✅ Vault loaded. Connected as: ${hederaSigner.address}`);
       } catch (error) {
-        console.error("Initialization failed:", error);
-        setStatus(`❌ Init error: ${error.message}`);
+          console.error("Failed to load wallet from stored key:", error);
+          setStatus("❌ Error loading vault. Please create a new one.");
+          localStorage.removeItem('integro-private-key'); // Clear corrupted key
       }
+    } else {
+      console.log("No key found in localStorage.");
+      setStatus("👋 Welcome! Please create a secure vault to begin.");
     }
-    initialize();
   }, []);
 
-  // --- Golden Path Transaction Handlers ---
+  // --- Vault Creation ---
+  const handleCreateVault = async () => {
+    setStatus("🔐 Creating your secure vault...");
+    try {
+      // Generate a new Hedera-compatible ECDSA private key
+      const newPrivateKey = PrivateKey.generateECDSA();
+      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
+
+      // Save to localStorage (simulating a secure enclave)
+      localStorage.setItem('integro-private-key', newPrivateKeyHex);
+
+      // Create a new signer
+      const hederaSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+      setSigner(hederaSigner);
+
+      setStatus(`✅ Vault created! Your new address: ${hederaSigner.address}`);
+      console.log("New vault created and stored in localStorage.");
+    } catch (error) {
+        console.error("Vault creation failed:", error);
+        setStatus(`❌ Vault Creation Failed: ${error.message}`);
+    }
+  };
+
+  // --- Golden Path Transaction Handlers (Refactored) ---
 
   const handleMint = async () => {
     if (!signer) return alert("Signer not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
-      const assetTokenContract = getContract(assetTokenContractAddress, assetTokenContractABI, signer);
-      // Minting the NFT to our own account for the demo
-      const tx = await assetTokenContract.safeMint(
+      const userAssetTokenContract = assetTokenContract.connect(signer);
+      const tx = await userAssetTokenContract.safeMint(
         signer.address,
         "Yam Harvest Future",
         "Grade A",
@@ -74,7 +87,7 @@ function App() {
       );
 
       const receipt = await tx.wait();
-      const transferEvent = receipt.events?.find(event => event.event === 'Transfer');
+      const transferEvent = receipt.logs.find(e => e.eventName === 'Transfer');
       if (!transferEvent) throw new Error("Token ID not found in transaction receipt.");
 
       const mintedTokenId = transferEvent.args.tokenId.toString();
@@ -84,7 +97,11 @@ function App() {
 
     } catch (error) {
       console.error("Minting failed:", error);
-      setStatus(`❌ Minting Failed: ${error.message}`);
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+          setStatus(`❌ Minting Failed: Insufficient HBAR balance. Please fund this address on the Hedera Testnet: ${signer.address}`);
+      } else {
+          setStatus(`❌ Minting Failed: ${error.message}`);
+      }
     } finally {
       setIsTransactionLoading(false);
     }
@@ -95,17 +112,17 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      const assetTokenContract = getContract(assetTokenContractAddress, assetTokenContractABI, signer);
-      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
+      const userAssetTokenContract = assetTokenContract.connect(signer);
+      const userEscrowContract = escrowContract.connect(signer);
 
       setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await assetTokenContract.approve(escrowContractAddress, tokenId);
+      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
       await approveTx.wait();
       setStatus("✅ Approval successful!");
 
       setStatus("⏳ Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8);
-      const listTx = await escrowContract.listAsset(tokenId, priceInTinybars);
+      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
+      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
       await listTx.wait();
 
       setFlowState("LISTED");
@@ -124,10 +141,10 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
+      const userEscrowContract = escrowContract.connect(signer);
       const priceInWeibars = ethers.parseEther("50");
 
-      const fundTx = await escrowContract.fundEscrow(tokenId, {
+      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
         value: priceInWeibars,
         gasLimit: 1000000
       });
@@ -149,8 +166,8 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const escrowContract = getContract(escrowContractAddress, escrowContractABI, signer);
-      const confirmTx = await escrowContract.confirmDelivery(tokenId, {
+      const userEscrowContract = escrowContract.connect(signer);
+      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
         gasLimit: 1000000
       });
       await confirmTx.wait();
@@ -158,7 +175,7 @@ function App() {
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
 
-    } catch (error) {
+    } catch (error)      {
       console.error("Confirmation failed:", error);
       setStatus(`❌ Confirmation Failed: ${error.message}`);
     } finally {
@@ -166,10 +183,49 @@ function App() {
     }
   };
 
+  // --- UI Rendering ---
+
+  const renderLoggedOutUI = () => (
+    <div className="card">
+      <h3>Welcome to the Future of RWAs</h3>
+      <p>Create a secure, seedless vault to manage your digital assets on Hedera.</p>
+      <button onClick={handleCreateVault} className="hedera-button">
+        Create Your Secure Vault
+      </button>
+    </div>
+  );
+
+  const renderLoggedInUI = () => (
+    <div className="card">
+      <h3>Golden Path Walkthrough</h3>
+      <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+
+      <div className="button-group">
+        <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
+          1. Mint RWA NFT
+        </button>
+        <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
+          2. List NFT for 50 HBAR
+        </button>
+        <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
+          3. Buy Now (Fund Escrow)
+        </button>
+        <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
+          4. Confirm Delivery
+        </button>
+      </div>
+
+      {flowState === 'SOLD' && (
+        <div className="success-message">
+          🎉 Congratulations! The entire flow is complete.
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="container">
-      <div className="header"><h1>Integro Marketplace</h1><p>The Golden Path Demo (Direct Signing)</p></div>
+      <div className="header"><h1>Integro Marketplace</h1><p>The "DID Identity Layer" Demo</p></div>
       <div className="page-container">
         <div className="card">
           <h3>Connection Status</h3>
@@ -178,33 +234,8 @@ function App() {
           </div>
         </div>
 
-        {signer && (
-          <div className="card">
-            <h3>Golden Path Walkthrough</h3>
-            <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
 
-            <div className="button-group">
-              <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
-                1. Mint RWA NFT
-              </button>
-              <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
-                2. List NFT for 50 HBAR
-              </button>
-              <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
-                3. Buy Now (Fund Escrow)
-              </button>
-              <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
-                4. Confirm Delivery
-              </button>
-            </div>
-
-            {flowState === 'SOLD' && (
-              <div className="success-message">
-                🎉 Congratulations! The entire flow is complete.
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
