@@ -30,7 +30,7 @@ exports.createAccount = functions.https.onRequest((request, response) => {
       const adminAccountId = process.env.HEDERA_ADMIN_ACCOUNT_ID;
       const adminPrivateKey = process.env.HEDERA_ADMIN_PRIVATE_KEY;
       if (!adminAccountId || !adminPrivateKey) {
-        throw new Error("Admin credentials are not set in Firebase config.");
+        throw new Error("Admin credentials (HEDERA_ADMIN_ACCOUNT_ID, HEDERA_ADMIN_PRIVATE_KEY) are not set as secrets in this V2 function environment.");
       }
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
@@ -65,7 +65,7 @@ exports.mintRWAviaUSSD = functions.https.onRequest((request, response) => {
       const adminAccountId = process.env.HEDERA_ADMIN_ACCOUNT_ID;
       const adminPrivateKey = process.env.HEDERA_ADMIN_PRIVATE_KEY;
       if (!adminAccountId || !adminPrivateKey) {
-        throw new Error("Admin credentials not set.");
+        throw new Error("Admin credentials (HEDERA_ADMIN_ACCOUNT_ID, HEDERA_ADMIN_PRIVATE_KEY) are not set as secrets in this V2 function environment.");
       }
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
