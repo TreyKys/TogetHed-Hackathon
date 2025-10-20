@@ -54,10 +54,14 @@ const handleBuyClick = (item) => {
 };
 
 function Marketplace() {
-  return (
-    <div className="marketplace-container card">{/* Added card class */}
-      <h2>RWA Marketplace</h2>
-      <p>Browse available tokenized assets from local producers.</p>
+    return (
+        <div className="marketplace-container card">
+            <h2>RWA Marketplace</h2>
+            <p>Browse available tokenized assets from local producers.</p>
+        </div>
+    );
+}
+
       <div className="item-list">
         {rwaItems.map((item) => (
           <div key={item.id} className="item-card">
