@@ -26,8 +26,8 @@ exports.createAccount = functions.https.onRequest((request, response) => {
       if (!publicKey) {
         throw new Error("Public key is required in the request body.");
       }
-      const adminAccountId = functions.config().hedera.admin_account_id;
-      const adminPrivateKey = functions.config().hedera.admin_private_key;
+      const adminAccountId = process.env.HEDERA_ADMIN_ACCOUNT_ID;
+      const adminPrivateKey = process.env.HEDERA_ADMIN_PRIVATE_KEY;
       if (!adminAccountId || !adminPrivateKey) {
         throw new Error("Admin credentials are not set in Firebase config.");
       }
@@ -61,8 +61,8 @@ exports.mintRWAviaUSSD = functions.https.onRequest((request, response) => {
       if (!accountId || !assetType || !quality || !location) {
         throw new Error("Missing required fields: accountId, assetType, quality, location.");
       }
-      const adminAccountId = functions.config().hedera.admin_account_id;
-      const adminPrivateKey = functions.config().hedera.admin_private_key;
+      const adminAccountId = process.env.HEDERA_ADMIN_ACCOUNT_ID;
+      const adminPrivateKey = process.env.HEDERA_ADMIN_PRIVATE_KEY;
       if (!adminAccountId || !adminPrivateKey) {
         throw new Error("Admin credentials not set.");
       }
