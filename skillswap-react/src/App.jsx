@@ -10,7 +10,7 @@ import {
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
-const cloudFunctionUrl = "https://createaccount-cehqwvb4aq-uc.a.run.app";
+const cloudFunctionUrl = "https://us-central1-integro-ecosystem.cloudfunctions.net/createAccount";
 
 function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
