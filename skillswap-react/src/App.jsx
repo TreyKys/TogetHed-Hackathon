@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import Marketplace from './Marketplace';
 import { ethers } from 'ethers';
 import { PrivateKey } from '@hashgraph/sdk';
 import {
@@ -238,31 +239,34 @@ function App() {
   );
 
   const renderLoggedInUI = () => (
-    <div className="card">
-      <h3>Golden Path Walkthrough</h3>
-      <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+    <>
+      <div className="card">
+        <h3>Golden Path Walkthrough</h3>
+        <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
 
-      <div className="button-group">
-        <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
-          1. Mint RWA NFT
-        </button>
-        <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
-          2. List NFT for 50 HBAR
-        </button>
-        <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
-          3. Buy Now (Fund Escrow)
-        </button>
-        <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
-          4. Confirm Delivery
-        </button>
-      </div>
-
-      {flowState === 'SOLD' && (
-        <div className="success-message">
-          🎉 Congratulations! The entire flow is complete.
+        <div className="button-group">
+          <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
+            1. Mint RWA NFT
+          </button>
+          <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
+            2. List NFT for 50 HBAR
+          </button>
+          <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
+            3. Buy Now (Fund Escrow)
+          </button>
+          <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
+            4. Confirm Delivery
+          </button>
         </div>
-      )}
-    </div>
+
+        {flowState === 'SOLD' && (
+          <div className="success-message">
+            🎉 Congratulations! The entire flow is complete.
+          </div>
+        )}
+      </div>
+      <Marketplace />
+    </>
   );
 
   return (
