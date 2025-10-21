@@ -834,7 +834,12 @@ export const assetTokenContractABI = [
 
 // --- 3. Provider & Contract Instances ---
 export const getProvider = () => {
-    return new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
+    const hederaTestnet = {
+        name: "Hedera Testnet",
+        chainId: 296,
+        ensAddress: null, // Hedera does not support ENS
+    };
+    return new ethers.JsonRpcProvider("https://testnet.hashio.io/api", hederaTestnet);
 };
 
 const provider = getProvider();
