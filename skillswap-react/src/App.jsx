@@ -17,7 +17,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
-  const [flowState, setFlowState] = useState('MINT');
+  const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
