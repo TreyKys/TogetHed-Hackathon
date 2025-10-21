@@ -9,6 +9,7 @@ def run():
 
         # Create a secure vault
         page.get_by_role("button", name="Create Your Secure Vault").click()
+        page.wait_for_selector("text=⏳ Finalizing account on the network (approx. 5 seconds)...")
         page.wait_for_selector("text=✅ Secure vault created!")
 
         # Click the mint button

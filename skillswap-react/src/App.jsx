@@ -69,6 +69,10 @@ function App() {
       localStorage.setItem('integro-private-key', newPrivateKeyHex);
       localStorage.setItem('integro-account-id', newAccountId);
 
+      // 4. Add a delay for network propagation
+      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
       const provider = getProvider();
       const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
 

@@ -96,7 +96,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
 
       const transaction = new ContractExecuteTransaction()
         .setContractId(assetTokenContractId)
-        .setGas(1000000) 
+        .setGas(1000000)
         .setFunctionParameters(functionCallAsBytes);
 
       const txResponse = await transaction.execute(client);
