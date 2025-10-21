@@ -77,7 +77,12 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       }
 
       // --- Ethers.js Setup ---
-      const provider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
+      const hederaTestnet = {
+        name: "Hedera Testnet",
+        chainId: 296,
+        ensAddress: null, // Hedera does not support ENS
+      };
+      const provider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api", hederaTestnet);
       const adminWallet = new ethers.Wallet(`0x${rawAdminPrivateKey}`, provider);
 
       const assetTokenAddress = AccountId.fromString(assetTokenContractId).toSolidityAddress();
