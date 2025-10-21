@@ -91,10 +91,19 @@ function App() {
     try {
       // Step 1: Associate the token with the user's account (client-side)
       setStatus("⏳ 1/2: Associating token with your account...");
-      const userAssetTokenContract = assetTokenContract.connect(signer);
-      const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-      await assocTx.wait();
-      setStatus("✅ Association successful!");
+      try {
+        const userAssetTokenContract = assetTokenContract.connect(signer);
+        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
+        await assocTx.wait();
+        setStatus("✅ Association successful!");
+      } catch (e) {
+        // This is a workaround. The contract reverts with a generic "HTS association failed"
+        // for multiple reasons, including if the token is already associated.
+        // We'll optimistically assume the association is already in place and proceed.
+        // The backend mint call will fail if the association is truly missing.
+        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
+        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
+      }
 
       // Step 2: Call the backend to mint the token (server-side)
       setStatus("⏳ 2/2: Calling secure backend to mint...");
