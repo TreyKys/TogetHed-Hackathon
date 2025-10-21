@@ -71,51 +71,50 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       if (!accountId || !assetType || !quality || !location) {
         throw new Error("Missing required fields: accountId, assetType, quality, location.");
       }
-      const adminAccountId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
-      if (!adminAccountId || !rawAdminPrivateKey) {
-        throw new Error("Admin credentials (HEDERA_ADMIN_ACCOUNT_ID, HEDERA_ADMIN_PRIVATE_KEY) are not set as secrets in this V2 function environment.");
+      if (!rawAdminPrivateKey) {
+        throw new Error("Admin private key is not set as a secret in this V2 function environment.");
       }
 
-      const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
+      // --- Ethers.js Setup ---
+      const provider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api");
+      const adminWallet = new ethers.Wallet(`0x${rawAdminPrivateKey}`, provider);
 
-      const client = Client.forTestnet();
-      client.setOperator(adminAccountId, adminPrivateKey);
+      const assetTokenAddress = AccountId.fromString(assetTokenContractId).toSolidityAddress();
+      const assetToken = new ethers.Contract(assetTokenAddress, assetTokenABI, adminWallet);
 
+      // --- Minting Logic ---
       const userEvmAddress = AccountId.fromString(accountId).toSolidityAddress();
 
-      const iface = new ethers.Interface(assetTokenABI);
-      const functionCallData = iface.encodeFunctionData("safeMint", [
-          userEvmAddress,
-          assetType,
-          quality,
-          location
-      ]);
+      const tx = await assetToken.safeMint(
+        userEvmAddress,
+        assetType,
+        quality,
+        location,
+        { gasLimit: 1_000_000 } // Explicit gas limit to prevent estimation issues
+      );
+      const receipt = await tx.wait();
 
-      const functionCallAsBytes = ethers.getBytes(functionCallData);
-
-      const transaction = new ContractExecuteTransaction()
-        .setContractId(assetTokenContractId)
-        .setGas(1000000)
-        .setFunctionParameters(functionCallAsBytes);
-
-      const txResponse = await transaction.execute(client);
-      const receipt = await txResponse.getReceipt(client);
-
-      const transferEventSignature = "Transfer(address,address,uint256)";
-      const transferEventTopic = ethers.id(transferEventSignature);
-
-      const transferLog = receipt.logs.find(log => log.topics[0] && log.topics[0].toString('hex') === transferEventTopic.slice(2));
-
-      let mintedTokenId = "N/A";
-      if (transferLog) {
-          const decodedLog = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], transferLog.data);
-          mintedTokenId = decodedLog[0].toString();
-      } else {
-        throw new Error("Could not find Transfer event in transaction receipt to determine Token ID.");
+      if (!receipt.logs || receipt.logs.length === 0) {
+        throw new Error("Transaction receipt contained no logs. Cannot determine Token ID.");
       }
 
-      console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}. Status: ${receipt.status}`);
+      // --- Event Parsing ---
+      // Find the Transfer event in the logs array
+      const transferEvent = receipt.logs.map(log => {
+        try {
+          return assetToken.interface.parseLog(log);
+        } catch (e) {
+          return null;
+        }
+      }).find(log => log && log.name === "Transfer");
+
+      if (!transferEvent) {
+        throw new Error("Expected a Transfer event but did not find one in the receipt.");
+      }
+      const mintedTokenId = transferEvent.args.tokenId.toString();
+
+      console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       return response.status(200).send({ tokenId: mintedTokenId });
 
     } catch (error) {
