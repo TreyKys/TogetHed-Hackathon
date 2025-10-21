@@ -11,6 +11,7 @@ import {
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
 const cloudFunctionUrl = "https://createaccount-cehqwvb4aq-uc.a.run.app";
+const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
 
 function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
@@ -83,67 +84,44 @@ function App() {
     }
   };
 
-    const handleMint = async () => {
-    if (!signer) return alert("Signer not initialized.");
+  const handleMint = async () => {
+    if (!signer || !accountId) return alert("Signer not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
-      // Hedera requires accounts to "associate" with a token before they can receive it.
-      setStatus("⏳ Associating token with your account...");
+      // Step 1: Associate the token with the user's account (client-side)
+      setStatus("⏳ 1/2: Associating token with your account...");
       const userAssetTokenContract = assetTokenContract.connect(signer);
       const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
       await assocTx.wait();
       setStatus("✅ Association successful!");
 
-      // Manually encode the function call to ensure it's sent correctly
-      const mintTxData = assetTokenContract.interface.encodeFunctionData("safeMint", [
-        signer.address,
-        "Yam Harvest Future",
-        "Grade A",
-        "Ikorodu, Nigeria",
-      ]);
-
-      // Construct the raw transaction object
-      const tx = {
-        to: assetTokenContractAddress,
-        data: mintTxData,
-        gasLimit: 1000000,
-      };
-
-      // Send the raw transaction
-      const txResponse = await signer.sendTransaction(tx);
-      const receipt = await txResponse.wait();
-
-
-      // Ethers v6 event parsing: Find the Transfer event log and parse it
-      const transferEventInterface = new ethers.Interface(assetTokenContract.abi);
-      const transferEventLog = receipt.logs.find(log => {
-          try {
-              const parsedLog = transferEventInterface.parseLog(log);
-              return parsedLog?.name === "Transfer";
-          } catch (error) {
-              return false;
-          }
+      // Step 2: Call the backend to mint the token (server-side)
+      setStatus("⏳ 2/2: Calling secure backend to mint...");
+      const response = await fetch(mintRwaViaUssdUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: accountId,
+          assetType: "Yam Harvest Future",
+          quality: "Grade A",
+          location: "Ikorodu, Nigeria"
+        }),
       });
 
-      if (!transferEventLog) throw new Error("Token ID not found in transaction receipt: Transfer event not found.");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Backend minting request failed.');
+      }
 
-      const parsedLog = transferEventInterface.parseLog(transferEventLog);
-      const mintedTokenId = parsedLog.args.tokenId.toString();
+      const mintedTokenId = data.tokenId;
       setTokenId(mintedTokenId);
       setFlowState("MINTED");
       setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
 
     } catch (error) {
       console.error("Minting failed:", error);
-      if (error.code === 'INSUFFICIENT_FUNDS') {
-          setStatus(`❌ Minting Failed: Insufficient HBAR balance. Please fund this address on the Hedera Testnet: ${signer.address}`);
-      } else if (error.code === -32001 || (error.message && error.message.includes("Requested resource not found"))) {
-          setStatus(`❌ Minting Failed: Your account is not yet active. Please fund it with Testnet HBAR to activate it: ${signer.address}`);
-      }
-      else {
-          setStatus(`❌ Minting Failed: ${error.message}`);
-      }
+      setStatus(`❌ Minting Failed: ${error.message}`);
     } finally {
       setIsTransactionLoading(false);
     }
