@@ -66,6 +66,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Strings__factory>;
     getContractFactory(
+      name: "AgentStaking",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.AgentStaking__factory>;
+    getContractFactory(
       name: "AssetToken",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.AssetToken__factory>;
@@ -73,6 +77,10 @@ declare module "hardhat/types/runtime" {
       name: "Escrow",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Escrow__factory>;
+    getContractFactory(
+      name: "LendingPool",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.LendingPool__factory>;
 
     getContractAt(
       name: "IHederaTokenService",
@@ -140,6 +148,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.Strings>;
     getContractAt(
+      name: "AgentStaking",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.AgentStaking>;
+    getContractAt(
       name: "AssetToken",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -149,6 +162,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.Escrow>;
+    getContractAt(
+      name: "LendingPool",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.LendingPool>;
 
     deployContract(
       name: "IHederaTokenService",
@@ -203,6 +221,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Strings>;
     deployContract(
+      name: "AgentStaking",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.AgentStaking>;
+    deployContract(
       name: "AssetToken",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AssetToken>;
@@ -210,6 +232,10 @@ declare module "hardhat/types/runtime" {
       name: "Escrow",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Escrow>;
+    deployContract(
+      name: "LendingPool",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.LendingPool>;
 
     deployContract(
       name: "IHederaTokenService",
@@ -277,6 +303,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Strings>;
     deployContract(
+      name: "AgentStaking",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.AgentStaking>;
+    deployContract(
       name: "AssetToken",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -286,6 +317,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Escrow>;
+    deployContract(
+      name: "LendingPool",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.LendingPool>;
 
     // default types
     getContractFactory(

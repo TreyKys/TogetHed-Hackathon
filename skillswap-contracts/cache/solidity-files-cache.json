@@ -2,7 +2,7 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/app/skillswap-contracts/contracts/AssetToken.sol": {
-      "lastModificationDate": 1760751097467,
+      "lastModificationDate": 1761148979189,
       "contentHash": "3c3e8f6bd1db072e41a34b2207832d1c",
       "sourceName": "contracts/AssetToken.sol",
       "solcConfig": {
@@ -614,7 +614,7 @@
       ]
     },
     "/app/skillswap-contracts/contracts/Escrow.sol": {
-      "lastModificationDate": 1760777414440,
+      "lastModificationDate": 1761148979189,
       "contentHash": "631e0ea1f6a52e18535fdcbc9b2fbf5f",
       "sourceName": "contracts/Escrow.sol",
       "solcConfig": {
@@ -652,8 +652,44 @@
         "Escrow"
       ]
     },
+    "/app/skillswap-contracts/contracts/AgentStaking.sol": {
+      "lastModificationDate": 1761149466920,
+      "contentHash": "18a06eac73cca595a59da160ece74631",
+      "sourceName": "contracts/AgentStaking.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "AgentStaking"
+      ]
+    },
     "/app/skillswap-contracts/node_modules/hardhat/console.sol": {
-      "lastModificationDate": 1760750523433,
+      "lastModificationDate": 1761149390259,
       "contentHash": "681c532e816169606d13a5fe8b475074",
       "sourceName": "hardhat/console.sol",
       "solcConfig": {
@@ -689,7 +725,7 @@
       ]
     },
     "/app/skillswap-contracts/node_modules/@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol": {
-      "lastModificationDate": 1760751026915,
+      "lastModificationDate": 1761149455203,
       "contentHash": "f9d3e3578a494cdbb70a0d1b3a2b06c0",
       "sourceName": "@hashgraph/smart-contracts/contracts/system-contracts/HederaResponseCodes.sol",
       "solcConfig": {
@@ -725,7 +761,7 @@
       ]
     },
     "/app/skillswap-contracts/node_modules/@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHederaTokenService.sol": {
-      "lastModificationDate": 1760751026983,
+      "lastModificationDate": 1761149455323,
       "contentHash": "0e86aba3b7e029fad3674f0ca0c74073",
       "sourceName": "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHederaTokenService.sol",
       "solcConfig": {
@@ -758,6 +794,42 @@
       ],
       "artifacts": [
         "IHederaTokenService"
+      ]
+    },
+    "/app/skillswap-contracts/contracts/LendingPool.sol": {
+      "lastModificationDate": 1761149466920,
+      "contentHash": "4580917467e69b02a44b6187100c6be5",
+      "sourceName": "contracts/LendingPool.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "LendingPool"
       ]
     }
   }

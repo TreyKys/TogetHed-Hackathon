@@ -8,6 +8,11 @@ import {
   escrowContractAddress,
   getProvider
 } from './hedera.js';
+import Navigation from './Navigation.jsx';
+import Marketplace from './Marketplace.jsx';
+import Profile from './Profile.jsx';
+import LendingPool from './LendingPool.jsx';
+import AgentStaking from './AgentStaking.jsx';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
 const cloudFunctionUrl = "https://createaccount-cehqwvb4aq-uc.a.run.app";
@@ -21,6 +26,7 @@ function App() {
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
+  const [currentView, setCurrentView] = useState('MAIN');
 
 
   // --- Check for an existing wallet on load ---
@@ -78,6 +84,7 @@ function App() {
 
       setSigner(newSigner);
       setAccountId(newAccountId);
+      setCurrentView('PROFILE'); // Navigate to profile page after vault creation
 
       setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
     } catch (error) {
@@ -216,6 +223,13 @@ function App() {
     }
   };
 
+  const handleProfileSave = (profileData) => {
+    // Placeholder for saving profile data
+    console.log('Profile saved:', profileData);
+    setCurrentView('MAIN');
+    setStatus('✅ Profile saved successfully!');
+  };
+
   // --- UI Rendering ---
 
   const renderLoggedOutUI = () => (
@@ -227,6 +241,23 @@ function App() {
       </button>
     </div>
   );
+
+  const renderMainContent = () => {
+    switch (currentView) {
+      case 'MAIN':
+        return renderLoggedInUI();
+      case 'MARKETPLACE':
+        return <Marketplace handleBuy={handleBuy} />;
+      case 'PROFILE':
+        return <Profile accountId={accountId} onProfileSave={handleProfileSave} setStatus={setStatus} />;
+      case 'LENDING':
+        return <LendingPool />;
+      case 'STAKING':
+        return <AgentStaking />;
+      default:
+        return renderLoggedInUI();
+    }
+  };
 
   const renderLoggedInUI = () => (
     <div className="card">
@@ -258,7 +289,11 @@ function App() {
 
   return (
     <div className="container">
-      <div className="header"><h1>Integro Marketplace</h1><p>The "DID Identity Layer" Demo</p></div>
+      <div className="header">
+        <h1>Integro Marketplace</h1>
+        <p>The "DID Identity Layer" Demo</p>
+        {signer && <Navigation setView={setCurrentView} />}
+      </div>
       <div className="page-container">
         <div className="card">
           <h3>Connection Status</h3>
@@ -267,7 +302,7 @@ function App() {
           </div>
         </div>
 
-        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
+        {signer ? renderMainContent() : renderLoggedOutUI()}
 
       </div>
     </div>
@@ -278,7 +313,7 @@ function App() {
 function CustomStyles() {
   return (<style>{`
     .container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); overflow: hidden; display: flex; flex-direction: column; font-family: Arial, sans-serif;}
-    .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; }
+    .header { position: relative; background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; }
     .header h1 { font-size: 28px; margin: 0; }
     .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
     .page-container { padding: 20px; }

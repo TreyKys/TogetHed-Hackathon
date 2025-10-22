@@ -1,0 +1,25 @@
+.lending-pool-container {
+  padding: 20px;
+  background-color: #f4f4f4;
+}
+
+.lending-pool-example {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #fff;
+  border-radius: 8px;
+}
+
+.request-loan-button {
+  background-color: #ccc;
+  color: #666;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: not-allowed;
+  font-size: 14px;
+  margin-top: 20px;
+}

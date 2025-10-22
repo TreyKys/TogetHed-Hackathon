@@ -1,0 +1,37 @@
+.profile-container {
+  padding: 20px;
+  background-color: #f4f4f4;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.display-name-input {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.roles-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.save-profile-button {
+  background-color: #2DD87F;
+  color: #000;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.save-profile-button:hover {
+  background-color: #25b366;
+}

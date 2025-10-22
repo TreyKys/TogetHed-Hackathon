@@ -1,0 +1,15 @@
+.agent-staking-container {
+  padding: 20px;
+  background-color: #f4f4f4;
+}
+
+.stake-hbar-button {
+  background-color: #ccc;
+  color: #666;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: not-allowed;
+  font-size: 14px;
+  margin-top: 20px;
+}
