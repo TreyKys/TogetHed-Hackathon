@@ -157,7 +157,7 @@ function App() {
 
       setStatus("⏳ Listing on marketplace...");
       const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
+      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars, { gasLimit: 2_000_000 });
       await listTx.wait();
 
       setFlowState("LISTED");
