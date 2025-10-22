@@ -127,9 +127,9 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const mintedTokenId = data.tokenId;
+      const { tokenId: mintedTokenId, transactionHash } = data;
       setTokenId(mintedTokenId);
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}. Verifying on-chain...`);
+      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying on-chain...`);
 
       // --- Poll to confirm token existence ---
       const userAssetTokenContract = getAssetTokenContract(); // Read-only instance
@@ -139,14 +139,19 @@ function App() {
 
       while (retries < maxRetries) {
         try {
+          console.log(`Polling attempt #${retries + 1}: Checking owner of tokenId ${mintedTokenId}. Expecting owner: ${signer.address}`);
           const owner = await userAssetTokenContract.ownerOf(mintedTokenId);
           if (owner.toLowerCase() === signer.address.toLowerCase()) {
-            console.log(`Token ${mintedTokenId} confirmed on-chain for owner ${owner}`);
+            console.log(`SUCCESS: Token ${mintedTokenId} confirmed on-chain for owner ${owner}`);
             isTokenConfirmed = true;
             break;
+          } else {
+            // This case is important - the token exists but has the wrong owner.
+            console.warn(`Token ${mintedTokenId} found, but owner is ${owner}, not ${signer.address}.`);
           }
         } catch (error) {
-          console.log(`Polling attempt #${retries + 1}: Token not yet found. Retrying in 2s...`);
+          // This catch block will be hit if the token doesn't exist yet (e.g., ownerOf reverts)
+          console.log(`Polling attempt #${retries + 1}: ownerOf(${mintedTokenId}) reverted. Token likely not propagated yet. Retrying in 2s...`);
         }
         retries++;
         await new Promise(resolve => setTimeout(resolve, 2000));

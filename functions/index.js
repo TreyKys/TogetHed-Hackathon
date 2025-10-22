@@ -163,8 +163,10 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       }
       const mintedTokenId = transferEvent.args.tokenId.toString();
 
+      const transactionHash = receipt.hash;
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
-      return response.status(200).send({ tokenId: mintedTokenId });
+      console.log(`Transaction Details: Hash: ${transactionHash}, Status: ${receipt.status === 1 ? 'Success' : 'Failed'}`);
+      return response.status(200).send({ tokenId: mintedTokenId, transactionHash });
 
     } catch (error) {
       // Handle common Hedera errors with actionable messages
