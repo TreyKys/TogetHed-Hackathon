@@ -180,14 +180,22 @@ function App() {
       const userAssetTokenContract = getAssetTokenContract(signer);
       const userEscrowContract = getEscrowContract(signer);
 
-      setStatus("⏳ Approving Escrow contract...");
-      // Hedera's estimateGas can be unreliable and fail with "unknown custom error".
-      // We'll provide a generous, fixed gasLimit to bypass estimation and ensure the transaction succeeds.
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId, { gasLimit: 2_000_000 });
-      await approveTx.wait();
-      setStatus("✅ Approval successful!");
+      // --- New Approval Logic ---
+      setStatus("⏳ 1/2: Checking marketplace approval status...");
+      const isApproved = await userAssetTokenContract.isApprovedForAll(signer.address, escrowContractAddress);
 
-      setStatus("⏳ Listing on marketplace...");
+      if (!isApproved) {
+        setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
+        console.log(`[handleList] Calling setApprovalForAll for operator: ${escrowContractAddress}`);
+        const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
+        await approveTx.wait();
+        setStatus("✅ Marketplace approved!");
+      } else {
+        setStatus("✅ Marketplace already approved.");
+      }
+      // --- End New Approval Logic ---
+
+      setStatus("⏳ 2/2: Listing on marketplace...");
       const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
       const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars, { gasLimit: 2_000_000 });
       await listTx.wait();
@@ -196,7 +204,7 @@ function App() {
       setStatus(`✅ NFT Listed for 50 HBAR!`);
 
     } catch (error) {
-      console.error("Listing failed:", error);
+      console.error("Listing failed:", JSON.stringify(error, null, 2));
       setStatus(`❌ Listing Failed: ${error.message}`);
     } finally {
       setIsTransactionLoading(false);
@@ -262,6 +270,19 @@ function App() {
     </div>
   );
 
+  const handleVerifyOwner = async () => {
+    if (!tokenId || !signer) return;
+    setStatus("🔍 Verifying ownership on-chain...");
+    try {
+      const userAssetTokenContract = getAssetTokenContract(); // Read-only
+      const owner = await userAssetTokenContract.ownerOf(tokenId);
+      setStatus(`✅ On-chain owner: ${owner}. Your address: ${signer.address}. Match: ${owner.toLowerCase() === signer.address.toLowerCase()}`);
+    } catch (error) {
+      console.error("Verification failed:", error);
+      setStatus(`❌ Verification failed. The token may not exist on-chain yet.`);
+    }
+  };
+
   const renderLoggedInUI = () => (
     <div className="card">
       <h3>Golden Path Walkthrough</h3>
@@ -271,6 +292,11 @@ function App() {
         <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
           1. Mint RWA NFT
         </button>
+        {flowState === 'MINTED' && (
+          <button onClick={handleVerifyOwner} className="hedera-button verify-button">
+            Manually Verify Ownership
+          </button>
+        )}
         <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
           2. List NFT for 50 HBAR
         </button>
