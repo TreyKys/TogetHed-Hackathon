@@ -129,37 +129,9 @@ function App() {
 
       const { tokenId: mintedTokenId, transactionHash } = data;
       setTokenId(mintedTokenId);
-      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying on-chain...`);
+      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}.`);
 
-      // --- Poll to confirm token existence ---
-      const userAssetTokenContract = getAssetTokenContract(); // Read-only instance
-      const maxRetries = 15; // 30 seconds timeout
-      let retries = 0;
-      let isTokenConfirmed = false;
-
-      while (retries < maxRetries) {
-        try {
-          console.log(`Polling attempt #${retries + 1}: Checking owner of tokenId ${mintedTokenId}. Expecting owner: ${signer.address}`);
-          const owner = await userAssetTokenContract.ownerOf(mintedTokenId);
-          if (owner.toLowerCase() === signer.address.toLowerCase()) {
-            console.log(`SUCCESS: Token ${mintedTokenId} confirmed on-chain for owner ${owner}`);
-            isTokenConfirmed = true;
-            break;
-          } else {
-            // This case is important - the token exists but has the wrong owner.
-            console.warn(`Token ${mintedTokenId} found, but owner is ${owner}, not ${signer.address}.`);
-          }
-        } catch (error) {
-          // This catch block will be hit if the token doesn't exist yet (e.g., ownerOf reverts)
-          console.log(`Polling attempt #${retries + 1}: ownerOf(${mintedTokenId}) reverted. Token likely not propagated yet. Retrying in 2s...`);
-        }
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      if (!isTokenConfirmed) {
-        throw new Error("Could not verify the minted NFT on the network. Please try again later.");
-      }
+      // --- Verification polling removed as per user request ---
 
       setFlowState("MINTED");
       setStatus(`✅ Ready to List! Token ID: ${mintedTokenId}`);
