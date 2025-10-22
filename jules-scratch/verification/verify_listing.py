@@ -18,6 +18,10 @@ def run(playwright):
         page.get_by_role("button", name="1. Mint RWA NFT").click()
         expect(page.locator(".status-message")).to_contain_text("✅ Ready to List!", timeout=45000) # Increased timeout for polling
 
+        # Manually Verify Ownership
+        page.get_by_role("button", name="Manually Verify Ownership").click()
+        expect(page.locator(".status-message")).to_contain_text("Match: true", timeout=20000)
+
         # List the NFT
         page.get_by_role("button", name="2. List NFT for 50 HBAR").click()
         expect(page.locator(".status-message")).to_contain_text("✅ NFT Listed for 50 HBAR!", timeout=20000)

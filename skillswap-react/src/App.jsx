@@ -181,6 +181,7 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
 
       setStatus("⏳ Approving Escrow contract...");
+      console.log(`[handleList] Calling approve with: escrowContractAddress=${escrowContractAddress}, tokenId=${tokenId}`);
       // Hedera's estimateGas can be unreliable and fail with "unknown custom error".
       // We'll provide a generous, fixed gasLimit to bypass estimation and ensure the transaction succeeds.
       const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId, { gasLimit: 2_000_000 });
@@ -262,6 +263,19 @@ function App() {
     </div>
   );
 
+  const handleVerifyOwner = async () => {
+    if (!tokenId || !signer) return;
+    setStatus("🔍 Verifying ownership on-chain...");
+    try {
+      const userAssetTokenContract = getAssetTokenContract(); // Read-only
+      const owner = await userAssetTokenContract.ownerOf(tokenId);
+      setStatus(`✅ On-chain owner: ${owner}. Your address: ${signer.address}. Match: ${owner.toLowerCase() === signer.address.toLowerCase()}`);
+    } catch (error) {
+      console.error("Verification failed:", error);
+      setStatus(`❌ Verification failed. The token may not exist on-chain yet.`);
+    }
+  };
+
   const renderLoggedInUI = () => (
     <div className="card">
       <h3>Golden Path Walkthrough</h3>
@@ -271,6 +285,11 @@ function App() {
         <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
           1. Mint RWA NFT
         </button>
+        {flowState === 'MINTED' && (
+          <button onClick={handleVerifyOwner} className="hedera-button verify-button">
+            Manually Verify Ownership
+          </button>
+        )}
         <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
           2. List NFT for 50 HBAR
         </button>
