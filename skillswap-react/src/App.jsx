@@ -129,8 +129,13 @@ function App() {
 
       const mintedTokenId = data.tokenId;
       setTokenId(mintedTokenId);
+      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}. Please wait a moment...`);
+
+      // Add a 3-second delay to allow for network propagation
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
       setFlowState("MINTED");
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+      setStatus(`✅ Ready to List! Token ID: ${mintedTokenId}`);
 
     } catch (error) {
       console.error("Minting failed:", error);

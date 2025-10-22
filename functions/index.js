@@ -104,6 +104,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
 
       // Convert contract and user account to EVM addresses
       const assetTokenAddress = toEvmAddress(assetTokenContractId);
+      console.log(`[mintRWAviaUSSD] Using AssetToken contract at address: ${assetTokenAddress} (from ID: ${assetTokenContractId})`);
       if (!assetTokenAddress) {
         throw new Error("Invalid assetTokenContractId format.");
       }

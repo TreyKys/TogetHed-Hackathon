@@ -16,7 +16,7 @@ def run(playwright):
 
         # Mint an NFT
         page.get_by_role("button", name="1. Mint RWA NFT").click()
-        expect(page.locator(".status-message")).to_contain_text("✅ NFT Minted!", timeout=20000)
+        expect(page.locator(".status-message")).to_contain_text("✅ Ready to List!", timeout=20000)
 
         # List the NFT
         page.get_by_role("button", name="2. List NFT for 50 HBAR").click()
