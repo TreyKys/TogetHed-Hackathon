@@ -149,7 +149,9 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
 
       setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
+      // Hedera's estimateGas can be unreliable and fail with "unknown custom error".
+      // We'll provide a generous, fixed gasLimit to bypass estimation and ensure the transaction succeeds.
+      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId, { gasLimit: 2_000_000 });
       await approveTx.wait();
       setStatus("✅ Approval successful!");
 
