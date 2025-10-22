@@ -26,6 +26,9 @@ function isValidEvmAddress(address) {
 
 // Utility: Convert Hedera AccountId to EVM address
 function toEvmAddress(accountIdString) {
+  if (isValidEvmAddress(accountIdString)) {
+    return accountIdString;
+  }
   try {
     return AccountId.fromString(accountIdString).toSolidityAddress();
   } catch (e) {
