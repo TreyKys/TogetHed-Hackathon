@@ -3,9 +3,9 @@ import './App.css';
 import { ethers } from 'ethers';
 import { PrivateKey } from '@hashgraph/sdk';
 import {
-  assetTokenContract,
-  escrowContract,
-  assetTokenContractAddress,
+  getAssetTokenContract,
+  getEscrowContract,
+  escrowContractAddress,
   getProvider
 } from './hedera.js';
 
@@ -96,7 +96,7 @@ function App() {
       // Step 1: Associate the token with the user's account (client-side)
       setStatus("⏳ 1/2: Associating token with your account...");
       try {
-        const userAssetTokenContract = assetTokenContract.connect(signer);
+        const userAssetTokenContract = getAssetTokenContract(signer);
         const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
         await assocTx.wait();
         setStatus("✅ Association successful!");
@@ -145,8 +145,8 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      const userAssetTokenContract = assetTokenContract.connect(signer);
-      const userEscrowContract = escrowContract.connect(signer);
+      const userAssetTokenContract = getAssetTokenContract(signer);
+      const userEscrowContract = getEscrowContract(signer);
 
       setStatus("⏳ Approving Escrow contract...");
       const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
@@ -174,7 +174,7 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const userEscrowContract = escrowContract.connect(signer);
+      const userEscrowContract = getEscrowContract(signer);
       const priceInWeibars = ethers.parseEther("50");
 
       const fundTx = await userEscrowContract.fundEscrow(tokenId, {
@@ -199,7 +199,7 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const userEscrowContract = escrowContract.connect(signer);
+      const userEscrowContract = getEscrowContract(signer);
       const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
         gasLimit: 1000000
       });
