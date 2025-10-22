@@ -129,10 +129,32 @@ function App() {
 
       const mintedTokenId = data.tokenId;
       setTokenId(mintedTokenId);
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}. Please wait a moment...`);
+      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}. Verifying on-chain...`);
 
-      // Add a 3-second delay to allow for network propagation
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // --- Poll to confirm token existence ---
+      const userAssetTokenContract = getAssetTokenContract(); // Read-only instance
+      const maxRetries = 15; // 30 seconds timeout
+      let retries = 0;
+      let isTokenConfirmed = false;
+
+      while (retries < maxRetries) {
+        try {
+          const owner = await userAssetTokenContract.ownerOf(mintedTokenId);
+          if (owner.toLowerCase() === signer.address.toLowerCase()) {
+            console.log(`Token ${mintedTokenId} confirmed on-chain for owner ${owner}`);
+            isTokenConfirmed = true;
+            break;
+          }
+        } catch (error) {
+          console.log(`Polling attempt #${retries + 1}: Token not yet found. Retrying in 2s...`);
+        }
+        retries++;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      if (!isTokenConfirmed) {
+        throw new Error("Could not verify the minted NFT on the network. Please try again later.");
+      }
 
       setFlowState("MINTED");
       setStatus(`✅ Ready to List! Token ID: ${mintedTokenId}`);
