@@ -30,7 +30,8 @@ function toEvmAddress(accountIdString) {
     return accountIdString;
   }
   try {
-    return AccountId.fromString(accountIdString).toSolidityAddress();
+    // The SDK returns an address WITHOUT the 0x prefix, which our validation function needs.
+    return `0x${AccountId.fromString(accountIdString).toSolidityAddress()}`;
   } catch (e) {
     return null;
   }
