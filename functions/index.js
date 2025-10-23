@@ -127,6 +127,9 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
         );
         const gasLimit = Math.ceil(Number(estimatedGas) * 1.2);
 
+        // --- DIAGNOSTIC LOG ---
+        console.log(`[DIAGNOSTIC] Calling safeMint with the following userEvmAddress: ${userEvmAddress}`);
+
         tx = await assetToken.safeMint(
           userEvmAddress,
           assetType,
