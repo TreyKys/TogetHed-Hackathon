@@ -8,7 +8,7 @@ const {
   PublicKey,
   AccountId
 } = require("@hashgraph/sdk");
-const cors = require("cors")({ origin: true });
+const cors = require("cors")({ origin: ["http://localhost:5173", "https://your-deployed-app-url.com"] });
 const ethers = require("ethers");
 
 // Define secrets
@@ -169,7 +169,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       const transactionHash = receipt.hash;
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       console.log(`Transaction Details: Hash: ${transactionHash}, Status: ${receipt.status === 1 ? 'Success' : 'Failed'}`);
-      return response.status(200).send({ tokenId: mintedTokenId, transactionHash });
+      return response.status(200).send({ tokenId: mintedTokenId, assetTokenId: assetTokenContractId, transactionHash });
 
     } catch (error) {
       // Handle common Hedera errors with actionable messages

@@ -26,6 +26,7 @@ function App() {
   const [accountEvmAddress, setAccountEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
+  const [assetTokenId, setAssetTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
   // --- Check for an existing wallet on load ---
@@ -156,8 +157,9 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const { tokenId: mintedTokenId, transactionHash } = data;
+      const { tokenId: mintedTokenId, assetTokenId: newAssetTokenId, transactionHash } = data;
       setTokenId(mintedTokenId);
+      setAssetTokenId(newAssetTokenId);
       setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying ownership...`);
 
       // --- Restore Verification Polling ---
@@ -207,7 +209,6 @@ function App() {
       // --- HTS Approval via Helper ---
       setStatus("⏳ 1/2: Granting HTS allowance to the marketplace...");
       const escrowContractId = "0.0.7115462";
-      const assetTokenId = "0.0.7115461";
       const allowanceReceipt = await setNftAllowance(
         accountId,
         privateKey,
