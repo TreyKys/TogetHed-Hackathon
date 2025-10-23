@@ -227,14 +227,15 @@ function App() {
 
       for (let i = 0; i < maxRetries; i++) {
         try {
-          isApproved = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
-          if (isApproved) {
+          const result = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
+          setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain... Result: ${result}`);
+          if (result) {
+            isApproved = true;
             break;
           }
         } catch (e) {
-          // Ignore errors and retry
+          setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain... Error: ${e.message}`);
         }
-        setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain...`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
 
