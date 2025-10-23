@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk';
+import { PrivateKey, AccountId } from '@hashgraph/sdk';
 import {
   getAssetTokenContract,
   getEscrowContract,
   escrowContractAddress,
-  getProvider
+  getProvider,
+  toEvmAddress
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -18,10 +19,10 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
+  const [accountEvmAddress, setAccountEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
-
 
   // --- Check for an existing wallet on load ---
   useEffect(() => {
@@ -34,6 +35,7 @@ function App() {
         const loadedSigner = new ethers.Wallet(storedKey, provider);
         setSigner(loadedSigner);
         setAccountId(storedAccountId);
+        setAccountEvmAddress(toEvmAddress(storedAccountId)); // Convert and store EVM address
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
     };
@@ -69,15 +71,34 @@ function App() {
       localStorage.setItem('integro-private-key', newPrivateKeyHex);
       localStorage.setItem('integro-account-id', newAccountId);
 
-      // 4. Add a delay for network propagation
-      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
+      // 4. Poll for account funding to ensure propagation
       const provider = getProvider();
       const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+      const expectedEvmAddress = toEvmAddress(newAccountId);
+      let balance = BigInt(0);
+      const maxRetries = 15;
+      const retryDelay = 2000; // 2 seconds
+
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          balance = await provider.getBalance(expectedEvmAddress);
+          if (balance > BigInt(0)) {
+            break; // Exit loop if balance is found
+          }
+        } catch (e) {
+          // Ignore errors and retry
+        }
+        setStatus(`(Attempt ${i + 1}/${maxRetries}) Waiting for account funding and propagation...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+
+      if (balance === BigInt(0)) {
+        throw new Error("Account was not funded by the factory after multiple attempts.");
+      }
 
       setSigner(newSigner);
       setAccountId(newAccountId);
+      setAccountEvmAddress(toEvmAddress(newAccountId)); // Convert and store EVM address
 
       setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
     } catch (error) {
@@ -129,12 +150,36 @@ function App() {
 
       const { tokenId: mintedTokenId, transactionHash } = data;
       setTokenId(mintedTokenId);
-      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}.`);
+      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying ownership...`);
 
-      // --- Verification polling removed as per user request ---
+      // --- Restore Verification Polling ---
+      const userAssetTokenContract = getAssetTokenContract(); // Read-only provider
+      const expectedOwner = toEvmAddress(accountId);
+      let isOwner = false;
+      const maxRetries = 10;
+      const retryDelay = 3000; // 3 seconds
+
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const onChainOwner = await userAssetTokenContract.ownerOf(mintedTokenId);
+          if (onChainOwner.toLowerCase() === expectedOwner.toLowerCase()) {
+            isOwner = true;
+            break;
+          }
+        } catch (e) {
+          // Ignore errors (e.g., token not found yet) and retry
+        }
+        setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying token ownership on-chain...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+
+      if (!isOwner) {
+        throw new Error("Could not verify token ownership on-chain after multiple attempts.");
+      }
+      // --- End Verification Polling ---
 
       setFlowState("MINTED");
-      setStatus(`✅ Ready to List! Token ID: ${mintedTokenId}`);
+      setStatus(`✅ Ownership Confirmed! Ready to List. Token ID: ${mintedTokenId}`);
 
     } catch (error) {
       console.error("Minting failed:", error);
@@ -152,20 +197,22 @@ function App() {
       const userAssetTokenContract = getAssetTokenContract(signer);
       const userEscrowContract = getEscrowContract(signer);
 
-      // --- New Approval Logic ---
-      setStatus("⏳ 1/2: Checking marketplace approval status...");
-      const isApproved = await userAssetTokenContract.isApprovedForAll(signer.address, escrowContractAddress);
-
-      if (!isApproved) {
-        setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
-        console.log(`[handleList] Calling setApprovalForAll for operator: ${escrowContractAddress}`);
-        const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
-        await approveTx.wait();
-        setStatus("✅ Marketplace approved!");
-      } else {
-        setStatus("✅ Marketplace already approved.");
+      // --- Final Optimistic Approval Logic ---
+      try {
+        setStatus("⏳ 1/2: Checking and setting marketplace approval...");
+        const isApproved = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
+        if (!isApproved) {
+            const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
+            await approveTx.wait();
+            setStatus("✅ Marketplace approved!");
+        } else {
+            setStatus("✅ Marketplace already approved.");
+        }
+      } catch (error) {
+          console.warn("Marketplace approval failed, but proceeding to list anyway. This is an optimistic approach to handle network delays.", error);
+          setStatus("⚠️ Approval failed or skipped. Proceeding to list...");
       }
-      // --- End New Approval Logic ---
+      // --- End Final Optimistic Approval Logic ---
 
       setStatus("⏳ 2/2: Listing on marketplace...");
       const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
@@ -248,7 +295,7 @@ function App() {
     try {
       const userAssetTokenContract = getAssetTokenContract(); // Read-only
       const owner = await userAssetTokenContract.ownerOf(tokenId);
-      setStatus(`✅ On-chain owner: ${owner}. Your address: ${signer.address}. Match: ${owner.toLowerCase() === signer.address.toLowerCase()}`);
+      setStatus(`✅ On-chain owner: ${owner}. Your address: ${accountEvmAddress}. Match: ${owner.toLowerCase() === accountEvmAddress.toLowerCase()}`);
     } catch (error) {
       console.error("Verification failed:", error);
       setStatus(`❌ Verification failed. The token may not exist on-chain yet.`);
