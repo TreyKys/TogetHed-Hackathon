@@ -66,7 +66,7 @@ export const escrowContract = getEscrowContract();
 // --- 7. Contract Execution Helper ---
 // This is the definitive way to execute a contract write function.
 // It uses ethers.js ONLY for ABI encoding and the Hedera SDK for everything else.
-export async function executeContractFunction(accountId, privateKey, contractId, contractAbi, functionName, params, gasLimit = 1_000_000) {
+export async function executeContractFunction(accountId, privateKey, contractId, contractAbi, functionName, params, gasLimit = 1_000_000, options = {}) {
     // 1. Setup Client
     const client = Client.forTestnet();
     const operatorId = AccountId.fromString(accountId);
@@ -85,8 +85,8 @@ export async function executeContractFunction(accountId, privateKey, contractId,
         .setFunctionParameters(Buffer.from(functionData.slice(2), 'hex'));
 
     // Handle payable functions
-    if (params.value) {
-      contractExecuteTx.setPayableAmount(Hbar.fromTinybars(params.value.toString()));
+    if (options.value) {
+      contractExecuteTx.setPayableAmount(Hbar.fromTinybars(options.value.toString()));
     }
 
     // 4. Sign and execute

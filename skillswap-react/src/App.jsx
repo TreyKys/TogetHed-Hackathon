@@ -217,11 +217,35 @@ function App() {
       if (approvalReceipt.status.toString() !== 'SUCCESS') {
         throw new Error(`Marketplace approval failed with status: ${approvalReceipt.status}`);
       }
-       setStatus("✅ Marketplace approved!");
+      setStatus("✅ Marketplace approved! Verifying on-chain...");
+
+      // --- Approval Verification Polling ---
+      const userAssetTokenContract = getAssetTokenContract(); // Read-only
+      let isApproved = false;
+      const maxRetries = 10;
+      const retryDelay = 2000; // 2 seconds
+
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          isApproved = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
+          if (isApproved) {
+            break;
+          }
+        } catch (e) {
+          // Ignore errors and retry
+        }
+        setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+
+      if (!isApproved) {
+        throw new Error("Could not verify marketplace approval on-chain after multiple attempts.");
+      }
+      // --- End Approval Verification Polling ---
 
       // --- Listing via Helper ---
       setStatus("⏳ 2/2: Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
+      const priceInTinybars = 50 * 1e8; // 50 HBAR
       const listingReceipt = await executeContractFunction(
         accountId,
         privateKey,
