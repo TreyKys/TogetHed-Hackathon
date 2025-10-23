@@ -6,8 +6,12 @@ import {
   getAssetTokenContract,
   getEscrowContract,
   escrowContractAddress,
+  assetTokenContractAddress,
+  assetTokenContractABI,
+  escrowContractABI,
   getProvider,
-  toEvmAddress
+  toEvmAddress,
+  executeContractFunction
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -17,7 +21,6 @@ const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
 function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [accountEvmAddress, setAccountEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
@@ -31,11 +34,9 @@ function App() {
       const storedAccountId = localStorage.getItem('integro-account-id');
       if (storedKey && storedAccountId) {
         setStatus("Restoring your secure vault...");
-        const provider = getProvider();
-        const loadedSigner = new ethers.Wallet(storedKey, provider);
-        setSigner(loadedSigner);
+        const accountEvmAddress = toEvmAddress(storedAccountId);
         setAccountId(storedAccountId);
-        setAccountEvmAddress(toEvmAddress(storedAccountId)); // Convert and store EVM address
+        setAccountEvmAddress(accountEvmAddress);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
     };
@@ -73,7 +74,6 @@ function App() {
 
       // 4. Poll for account funding to ensure propagation
       const provider = getProvider();
-      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
       const expectedEvmAddress = toEvmAddress(newAccountId);
       let balance = BigInt(0);
       const maxRetries = 15;
@@ -96,7 +96,6 @@ function App() {
         throw new Error("Account was not funded by the factory after multiple attempts.");
       }
 
-      setSigner(newSigner);
       setAccountId(newAccountId);
       setAccountEvmAddress(toEvmAddress(newAccountId)); // Convert and store EVM address
 
@@ -110,23 +109,31 @@ function App() {
   };
 
   const handleMint = async () => {
-    if (!signer || !accountId) return alert("Signer not initialized.");
+    if (!accountId) return alert("Account not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
       // Step 1: Associate the token with the user's account (client-side)
       setStatus("⏳ 1/2: Associating token with your account...");
+      const privateKey = localStorage.getItem('integro-private-key');
       try {
-        const userAssetTokenContract = getAssetTokenContract(signer);
-        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-        await assocTx.wait();
-        setStatus("✅ Association successful!");
-      } catch (e) {
-        // This is a workaround. The contract reverts with a generic "HTS association failed"
-        // for multiple reasons, including if the token is already associated.
-        // We'll optimistically assume the association is already in place and proceed.
-        // The backend mint call will fail if the association is truly missing.
-        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
+        const assocReceipt = await executeContractFunction(
+          accountId,
+          privateKey,
+          assetTokenContractAddress,
+          assetTokenContractABI,
+          "associate",
+          [],
+          1_000_000
+        );
+        if (assocReceipt.status.toString() === 'SUCCESS') {
+          setStatus("✅ Association successful!");
+        } else {
+          throw new Error(`Association failed with status: ${assocReceipt.status}`);
+        }
+      } catch (error) {
+        // This is an optimistic workaround. The call often fails if already associated.
+        console.warn("Association transaction failed, proceeding anyway.", error);
         setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
       }
 
@@ -190,34 +197,43 @@ function App() {
   };
 
   const handleList = async () => {
-    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    if (!accountId || !tokenId) return alert("Please mint an NFT first.");
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      const userAssetTokenContract = getAssetTokenContract(signer);
-      const userEscrowContract = getEscrowContract(signer);
+      const privateKey = localStorage.getItem('integro-private-key');
 
-      // --- Final Optimistic Approval Logic ---
-      try {
-        setStatus("⏳ 1/2: Checking and setting marketplace approval...");
-        const isApproved = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
-        if (!isApproved) {
-            const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
-            await approveTx.wait();
-            setStatus("✅ Marketplace approved!");
-        } else {
-            setStatus("✅ Marketplace already approved.");
-        }
-      } catch (error) {
-          console.warn("Marketplace approval failed, but proceeding to list anyway. This is an optimistic approach to handle network delays.", error);
-          setStatus("⚠️ Approval failed or skipped. Proceeding to list...");
+      // --- Approval via Helper ---
+      setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
+      const approvalReceipt = await executeContractFunction(
+        accountId,
+        privateKey,
+        assetTokenContractAddress,
+        assetTokenContractABI,
+        "setApprovalForAll",
+        [escrowContractAddress, true],
+        1_000_000
+      );
+      if (approvalReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Marketplace approval failed with status: ${approvalReceipt.status}`);
       }
-      // --- End Final Optimistic Approval Logic ---
+       setStatus("✅ Marketplace approved!");
 
+      // --- Listing via Helper ---
       setStatus("⏳ 2/2: Listing on marketplace...");
       const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars, { gasLimit: 2_000_000 });
-      await listTx.wait();
+      const listingReceipt = await executeContractFunction(
+        accountId,
+        privateKey,
+        escrowContractAddress,
+        escrowContractABI,
+        "listAsset",
+        [tokenId, priceInTinybars],
+        2_000_000
+      );
+       if (listingReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Listing failed with status: ${listingReceipt.status}`);
+      }
 
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
@@ -231,18 +247,27 @@ function App() {
   };
 
   const handleBuy = async () => {
-    if (!signer || !tokenId) return alert("No item listed for sale.");
+    if (!accountId || !tokenId) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const priceInWeibars = ethers.parseEther("50");
+      const privateKey = localStorage.getItem('integro-private-key');
+      const priceInTinybars = BigInt(50 * 1e8);
 
-      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
-        value: priceInWeibars,
-        gasLimit: 1000000
-      });
-      await fundTx.wait();
+      const fundReceipt = await executeContractFunction(
+        accountId,
+        privateKey,
+        escrowContractAddress,
+        escrowContractABI,
+        "fundEscrow",
+        [tokenId],
+        1_000_000,
+        { value: priceInTinybars }
+      );
+
+       if (fundReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Funding failed with status: ${fundReceipt.status}`);
+      }
 
       setFlowState("FUNDED");
       setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
@@ -256,15 +281,24 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    if (!accountId || !tokenId) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
-        gasLimit: 1000000
-      });
-      await confirmTx.wait();
+      const privateKey = localStorage.getItem('integro-private-key');
+      const confirmReceipt = await executeContractFunction(
+        accountId,
+        privateKey,
+        escrowContractAddress,
+        escrowContractABI,
+        "confirmDelivery",
+        [tokenId],
+        1_000_000
+      );
+
+      if (confirmReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Confirmation failed with status: ${confirmReceipt.status}`);
+      }
 
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
@@ -346,7 +380,7 @@ function App() {
           </div>
         </div>
 
-        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
+        {accountId ? renderLoggedInUI() : renderLoggedOutUI()}
 
       </div>
     </div>

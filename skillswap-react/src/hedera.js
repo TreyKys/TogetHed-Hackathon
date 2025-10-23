@@ -1,5 +1,12 @@
+import { Buffer } from "buffer";
 import { ethers } from "ethers";
-import { AccountId } from "@hashgraph/sdk";
+import {
+    AccountId,
+    Client,
+    ContractExecuteTransaction,
+    PrivateKey,
+    Hbar
+} from "@hashgraph/sdk";
 
 // --- 1. LIVE CONTRACT ADDRESSES (Updated) ---
 export const escrowContractAddress = "0x48FbE77CeFb35Ba37c07851c2fD61457224407D5";
@@ -55,3 +62,37 @@ export const getEscrowContract = (signerOrProvider = provider) => {
 // --- 6. Export base, unsigned contract instances (read-only) ---
 export const assetTokenContract = getAssetTokenContract();
 export const escrowContract = getEscrowContract();
+
+// --- 7. Contract Execution Helper ---
+// This is the definitive way to execute a contract write function.
+// It uses ethers.js ONLY for ABI encoding and the Hedera SDK for everything else.
+export async function executeContractFunction(accountId, privateKey, contractId, contractAbi, functionName, params, gasLimit = 1_000_000) {
+    // 1. Setup Client
+    const client = Client.forTestnet();
+    const operatorId = AccountId.fromString(accountId);
+    const operatorKey = PrivateKey.fromStringECDSA(privateKey.slice(2)); // Remove '0x'
+    client.setOperator(operatorId, operatorKey);
+
+    // 2. Encode function data using ethers.js
+    const contractInterface = new ethers.Interface(contractAbi);
+    const functionData = contractInterface.encodeFunctionData(functionName, params);
+
+    // 3. Build Hedera SDK Transaction
+    const hederaContractId = AccountId.fromSolidityAddress(contractId).toString();
+    const contractExecuteTx = new ContractExecuteTransaction()
+        .setContractId(hederaContractId)
+        .setGas(gasLimit)
+        .setFunctionParameters(Buffer.from(functionData.slice(2), 'hex'));
+
+    // Handle payable functions
+    if (params.value) {
+      contractExecuteTx.setPayableAmount(Hbar.fromTinybars(params.value.toString()));
+    }
+
+    // 4. Sign and execute
+    const txResponse = await contractExecuteTx.execute(client);
+
+    // 5. Return the receipt
+    const receipt = await txResponse.getReceipt(client);
+    return receipt;
+}
