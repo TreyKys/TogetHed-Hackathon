@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey, Client, ContractFunctionParameters } from '@hashgraph/sdk';
+import { PrivateKey, Client, ContractFunctionParameters, TokenAssociateTransaction, AccountAllowanceApproveTransaction, NftId } from '@hashgraph/sdk';
 import {
   getAssetTokenContract,
   getEscrowContract,
@@ -21,6 +21,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
+  const [assetTokenId, setAssetTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
   const toEvmAddress = (hederaAddress) => {
@@ -120,24 +121,9 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
-      // Step 1: Associate the token with the user's account (client-side)
-      setStatus("⏳ 1/2: Associating token with your account...");
-      try {
-        const userAssetTokenContract = getAssetTokenContract(signer);
-        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-        await assocTx.wait();
-        setStatus("✅ Association successful!");
-      } catch (e) {
-        // This is a workaround. The contract reverts with a generic "HTS association failed"
-        // for multiple reasons, including if the token is already associated.
-        // We'll optimistically assume the association is already in place and proceed.
-        // The backend mint call will fail if the association is truly missing.
-        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
-        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
-      }
-
-      // Step 2: Call the backend to mint the token (server-side)
-      setStatus("⏳ 2/2: Calling secure backend to mint...");
+      // Step 1: Call the backend to mint the token (server-side)
+      // We need the hederaTokenId from the backend *before* we can associate.
+      setStatus("⏳ 1/3: Calling secure backend to mint...");
       const response = await fetch(mintRwaViaUssdUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,11 +140,27 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const { tokenId: mintedTokenId, transactionHash } = data;
+      const { tokenId: mintedTokenId, transactionHash, assetTokenId: hederaTokenId } = data;
+
+      setStatus(`✅ Mint successful! Associating token...`);
+
+      // Step 2: Associate the token with the user's account (client-side)
+      setStatus("⏳ 2/3: Associating token with your account...");
+      const assocTx = await new TokenAssociateTransaction()
+        .setAccountId(accountId)
+        .setTokenIds([hederaTokenId])
+        .freezeWith(client);
+
+      const signedAssocTx = await assocTx.signWithSigner(client.signer);
+      const assocResponse = await signedAssocTx.executeWithSigner(client.signer);
+      await assocResponse.getReceipt(client);
+      setStatus("✅ Association successful!");
+
       setTokenId(mintedTokenId);
-      setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying ownership...`);
+      setAssetTokenId(hederaTokenId); // New state for the Hedera Token ID
 
       // --- Restore Verification Polling ---
+      setStatus("⏳ 3/3: Verifying token ownership on-chain...");
       const userAssetTokenContract = getAssetTokenContract(); // Read-only provider
       const expectedOwner = toEvmAddress(accountId);
 
@@ -201,15 +203,16 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      // --- REFACTORED: Use Hedera SDK Transaction ---
-      setStatus("⏳ 1/2: Approving marketplace...");
-      await executeContractFunction(
-        client,
-        assetTokenContractAddress,
-        "setApprovalForAll",
-        new ContractFunctionParameters().addAddress(escrowContractAddress).addBool(true),
-        1_000_000
-      );
+      // --- REFACTORED: Use Hedera SDK Transaction for HTS Approval ---
+      setStatus("⏳ 1/2: Approving marketplace via HTS...");
+      const nftId = new NftId(assetTokenId, tokenId);
+      const approvalTx = await new AccountAllowanceApproveTransaction()
+        .approveTokenNftAllowance(nftId, accountId, escrowContractAddress)
+        .freezeWith(client);
+
+      const signedApprovalTx = await approvalTx.signWithSigner(client.signer);
+      const approvalResponse = await signedApprovalTx.executeWithSigner(client.signer);
+      await approvalResponse.getReceipt(client);
       setStatus("✅ Marketplace approved!");
 
       setStatus("⏳ 2/2: Listing on marketplace...");

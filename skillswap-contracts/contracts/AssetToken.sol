@@ -42,17 +42,4 @@ contract AssetToken is ERC721, Ownable {
         console.log("Minted new Asset NFT with Token ID %s to address %s", tokenId, to);
     }
 
-    /**
-     * @dev Associates the calling account with this token.
-     * This is a Hedera-specific function required before an account can receive the token.
-     */
-    function associate() public {
-        // The address of the HTS precompile is 0x167
-        IHederaTokenService hts = IHederaTokenService(address(0x167));
-        int response = hts.associateToken(msg.sender, address(this));
-
-        if (response != HederaResponseCodes.SUCCESS) {
-            revert("HTS association failed");
-        }
-    }
 }

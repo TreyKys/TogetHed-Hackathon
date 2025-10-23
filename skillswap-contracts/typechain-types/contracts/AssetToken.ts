@@ -42,7 +42,6 @@ export interface AssetTokenInterface extends Interface {
     nameOrSignature:
       | "approve"
       | "assetData"
-      | "associate"
       | "balanceOf"
       | "getApproved"
       | "getAssetData"
@@ -78,7 +77,6 @@ export interface AssetTokenInterface extends Interface {
     functionFragment: "assetData",
     values: [BigNumberish]
   ): string;
-  encodeFunctionData(functionFragment: "associate", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "balanceOf",
     values: [AddressLike]
@@ -141,7 +139,6 @@ export interface AssetTokenInterface extends Interface {
 
   decodeFunctionResult(functionFragment: "approve", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "assetData", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "associate", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getApproved",
@@ -323,8 +320,6 @@ export interface AssetToken extends BaseContract {
     "view"
   >;
 
-  associate: TypedContractMethod<[], [void], "nonpayable">;
-
   balanceOf: TypedContractMethod<[owner: AddressLike], [bigint], "view">;
 
   getApproved: TypedContractMethod<[tokenId: BigNumberish], [string], "view">;
@@ -424,9 +419,6 @@ export interface AssetToken extends BaseContract {
     ],
     "view"
   >;
-  getFunction(
-    nameOrSignature: "associate"
-  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[owner: AddressLike], [bigint], "view">;
