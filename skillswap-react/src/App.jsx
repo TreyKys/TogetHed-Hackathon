@@ -6,13 +6,7 @@ import {
   getAssetTokenContract,
   getEscrowContract,
   escrowContractAddress,
-  assetTokenContractAddress,
-  assetTokenContractABI,
-  escrowContractABI,
-  getProvider,
-  toEvmAddress,
-  executeContractFunction,
-  setNftAllowance
+  getProvider
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -22,12 +16,24 @@ const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
 function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
-  const [accountEvmAddress, setAccountEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
-  const [assetTokenId, setAssetTokenId] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
+
+  const toEvmAddress = (hederaAddress) => {
+    if (!hederaAddress || typeof hederaAddress !== 'string') {
+        return null;
+    }
+    try {
+        return `0x${AccountId.fromString(hederaAddress).toSolidityAddress()}`;
+    } catch (error) {
+        console.error("Error converting Hedera address to EVM address:", error);
+        return null;
+    }
+  };
+
 
   // --- Check for an existing wallet on load ---
   useEffect(() => {
@@ -36,9 +42,10 @@ function App() {
       const storedAccountId = localStorage.getItem('integro-account-id');
       if (storedKey && storedAccountId) {
         setStatus("Restoring your secure vault...");
-        const accountEvmAddress = toEvmAddress(storedAccountId);
+        const provider = getProvider();
+        const loadedSigner = new ethers.Wallet(storedKey, provider);
+        setSigner(loadedSigner);
         setAccountId(storedAccountId);
-        setAccountEvmAddress(accountEvmAddress);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
     };
@@ -74,32 +81,15 @@ function App() {
       localStorage.setItem('integro-private-key', newPrivateKeyHex);
       localStorage.setItem('integro-account-id', newAccountId);
 
-      // 4. Poll for account funding to ensure propagation
+      // 4. Add a delay for network propagation
+      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
       const provider = getProvider();
-      const expectedEvmAddress = toEvmAddress(newAccountId);
-      let balance = BigInt(0);
-      const maxRetries = 15;
-      const retryDelay = 2000; // 2 seconds
+      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
 
-      for (let i = 0; i < maxRetries; i++) {
-        try {
-          balance = await provider.getBalance(expectedEvmAddress);
-          if (balance > BigInt(0)) {
-            break; // Exit loop if balance is found
-          }
-        } catch (e) {
-          // Ignore errors and retry
-        }
-        setStatus(`(Attempt ${i + 1}/${maxRetries}) Waiting for account funding and propagation...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-
-      if (balance === BigInt(0)) {
-        throw new Error("Account was not funded by the factory after multiple attempts.");
-      }
-
+      setSigner(newSigner);
       setAccountId(newAccountId);
-      setAccountEvmAddress(toEvmAddress(newAccountId)); // Convert and store EVM address
 
       setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
     } catch (error) {
@@ -111,31 +101,23 @@ function App() {
   };
 
   const handleMint = async () => {
-    if (!accountId) return alert("Account not initialized.");
+    if (!signer || !accountId) return alert("Signer not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
     try {
       // Step 1: Associate the token with the user's account (client-side)
       setStatus("⏳ 1/2: Associating token with your account...");
-      const privateKey = localStorage.getItem('integro-private-key');
       try {
-        const assocReceipt = await executeContractFunction(
-          accountId,
-          privateKey,
-          assetTokenContractAddress,
-          assetTokenContractABI,
-          "associate",
-          [],
-          1_000_000
-        );
-        if (assocReceipt.status.toString() === 'SUCCESS') {
-          setStatus("✅ Association successful!");
-        } else {
-          throw new Error(`Association failed with status: ${assocReceipt.status}`);
-        }
-      } catch (error) {
-        // This is an optimistic workaround. The call often fails if already associated.
-        console.warn("Association transaction failed, proceeding anyway.", error);
+        const userAssetTokenContract = getAssetTokenContract(signer);
+        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
+        await assocTx.wait();
+        setStatus("✅ Association successful!");
+      } catch (e) {
+        // This is a workaround. The contract reverts with a generic "HTS association failed"
+        // for multiple reasons, including if the token is already associated.
+        // We'll optimistically assume the association is already in place and proceed.
+        // The backend mint call will fail if the association is truly missing.
+        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
         setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
       }
 
@@ -157,18 +139,13 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const { tokenId: mintedTokenId, assetTokenId: newAssetTokenId, transactionHash, mintedToAddress } = data;
+      const { tokenId: mintedTokenId, transactionHash } = data;
       setTokenId(mintedTokenId);
-      setAssetTokenId(newAssetTokenId);
       setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying ownership...`);
 
       // --- Restore Verification Polling ---
       const userAssetTokenContract = getAssetTokenContract(); // Read-only provider
       const expectedOwner = toEvmAddress(accountId);
-
-      console.log("[DIAGNOSTIC] Expected Owner:", expectedOwner);
-      console.log("[DIAGNOSTIC] Minted To Address:", mintedToAddress);
-      console.log("[DIAGNOSTIC] Do they match?", expectedOwner.toLowerCase() === mintedToAddress.toLowerCase());
 
       let isOwner = false;
       const maxRetries = 10;
@@ -205,48 +182,33 @@ function App() {
   };
 
   const handleList = async () => {
-    if (!accountId || !tokenId) return alert("Please mint an NFT first.");
+    if (!signer || !tokenId) return alert("Please mint an NFT first.");
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      const privateKey = localStorage.getItem('integro-private-key');
+      const userAssetTokenContract = getAssetTokenContract(signer);
+      const userEscrowContract = getEscrowContract(signer);
 
-      // --- HTS Approval via Helper ---
-      setStatus("⏳ 1/2: Granting HTS allowance to the marketplace...");
-      const escrowContractId = "0.0.7115462";
-      const allowanceReceipt = await setNftAllowance(
-        accountId,
-        privateKey,
-        assetTokenId,
-        escrowContractId,
-        tokenId
-      );
-      if (allowanceReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`HTS allowance failed with status: ${allowanceReceipt.status}`);
+      setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
+      try {
+        const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
+        await approveTx.wait();
+        setStatus("✅ Marketplace approved!");
+      } catch (e) {
+        console.warn("Approval transaction failed, proceeding anyway. This may be because the marketplace is already approved.", e);
+        setStatus("⚠️ Approval failed or skipped. Proceeding to list...");
       }
-      setStatus("✅ HTS allowance granted!");
 
-      // --- Listing via Helper ---
       setStatus("⏳ 2/2: Listing on marketplace...");
-      const priceInTinybars = 50 * 1e8; // 50 HBAR
-      const listingReceipt = await executeContractFunction(
-        accountId,
-        privateKey,
-        escrowContractAddress,
-        escrowContractABI,
-        "listAsset",
-        [tokenId, priceInTinybars],
-        2_000_000
-      );
-       if (listingReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Listing failed with status: ${listingReceipt.status}`);
-      }
+      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
+      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
+      await listTx.wait();
 
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
 
     } catch (error) {
-      console.error("Listing failed:", JSON.stringify(error, null, 2));
+      console.error("Listing failed:", error);
       setStatus(`❌ Listing Failed: ${error.message}`);
     } finally {
       setIsTransactionLoading(false);
@@ -254,27 +216,18 @@ function App() {
   };
 
   const handleBuy = async () => {
-    if (!accountId || !tokenId) return alert("No item listed for sale.");
+    if (!signer || !tokenId) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const privateKey = localStorage.getItem('integro-private-key');
-      const priceInTinybars = BigInt(50 * 1e8);
+      const userEscrowContract = getEscrowContract(signer);
+      const priceInWeibars = ethers.parseEther("50");
 
-      const fundReceipt = await executeContractFunction(
-        accountId,
-        privateKey,
-        escrowContractAddress,
-        escrowContractABI,
-        "fundEscrow",
-        [tokenId],
-        1_000_000,
-        { value: priceInTinybars }
-      );
-
-       if (fundReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Funding failed with status: ${fundReceipt.status}`);
-      }
+      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
+        value: priceInWeibars,
+        gasLimit: 1000000
+      });
+      await fundTx.wait();
 
       setFlowState("FUNDED");
       setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
@@ -288,24 +241,15 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!accountId || !tokenId) return alert("No funded escrow to confirm.");
+    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const privateKey = localStorage.getItem('integro-private-key');
-      const confirmReceipt = await executeContractFunction(
-        accountId,
-        privateKey,
-        escrowContractAddress,
-        escrowContractABI,
-        "confirmDelivery",
-        [tokenId],
-        1_000_000
-      );
-
-      if (confirmReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Confirmation failed with status: ${confirmReceipt.status}`);
-      }
+      const userEscrowContract = getEscrowContract(signer);
+      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
+        gasLimit: 1000000
+      });
+      await confirmTx.wait();
 
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
@@ -330,19 +274,6 @@ function App() {
     </div>
   );
 
-  const handleVerifyOwner = async () => {
-    if (!tokenId || !signer) return;
-    setStatus("🔍 Verifying ownership on-chain...");
-    try {
-      const userAssetTokenContract = getAssetTokenContract(); // Read-only
-      const owner = await userAssetTokenContract.ownerOf(tokenId);
-      setStatus(`✅ On-chain owner: ${owner}. Your address: ${accountEvmAddress}. Match: ${owner.toLowerCase() === accountEvmAddress.toLowerCase()}`);
-    } catch (error) {
-      console.error("Verification failed:", error);
-      setStatus(`❌ Verification failed. The token may not exist on-chain yet.`);
-    }
-  };
-
   const renderLoggedInUI = () => (
     <div className="card">
       <h3>Golden Path Walkthrough</h3>
@@ -352,11 +283,6 @@ function App() {
         <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
           1. Mint RWA NFT
         </button>
-        {flowState === 'MINTED' && (
-          <button onClick={handleVerifyOwner} className="hedera-button verify-button">
-            Manually Verify Ownership
-          </button>
-        )}
         <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
           2. List NFT for 50 HBAR
         </button>
@@ -387,7 +313,7 @@ function App() {
           </div>
         </div>
 
-        {accountId ? renderLoggedInUI() : renderLoggedOutUI()}
+        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
 
       </div>
     </div>
