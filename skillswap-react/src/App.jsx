@@ -11,7 +11,8 @@ import {
   escrowContractABI,
   getProvider,
   toEvmAddress,
-  executeContractFunction
+  executeContractFunction,
+  setNftAllowance
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -203,46 +204,21 @@ function App() {
     try {
       const privateKey = localStorage.getItem('integro-private-key');
 
-      // --- Approval via Helper ---
-      setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
-      const approvalReceipt = await executeContractFunction(
+      // --- HTS Approval via Helper ---
+      setStatus("⏳ 1/2: Granting HTS allowance to the marketplace...");
+      const escrowContractId = "0.0.7115462";
+      const assetTokenId = "0.0.7115461";
+      const allowanceReceipt = await setNftAllowance(
         accountId,
         privateKey,
-        assetTokenContractAddress,
-        assetTokenContractABI,
-        "setApprovalForAll",
-        [escrowContractAddress, true],
-        1_000_000
+        assetTokenId,
+        escrowContractId,
+        tokenId
       );
-      if (approvalReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Marketplace approval failed with status: ${approvalReceipt.status}`);
+      if (allowanceReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`HTS allowance failed with status: ${allowanceReceipt.status}`);
       }
-      setStatus("✅ Marketplace approved! Verifying on-chain...");
-
-      // --- Approval Verification Polling ---
-      const userAssetTokenContract = getAssetTokenContract(); // Read-only
-      let isApproved = false;
-      const maxRetries = 10;
-      const retryDelay = 2000; // 2 seconds
-
-      for (let i = 0; i < maxRetries; i++) {
-        try {
-          const result = await userAssetTokenContract.isApprovedForAll(accountEvmAddress, escrowContractAddress);
-          setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain... Result: ${result}`);
-          if (result) {
-            isApproved = true;
-            break;
-          }
-        } catch (e) {
-          setStatus(`(Attempt ${i + 1}/${maxRetries}) Verifying approval on-chain... Error: ${e.message}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-
-      if (!isApproved) {
-        throw new Error("Could not verify marketplace approval on-chain after multiple attempts.");
-      }
-      // --- End Approval Verification Polling ---
+      setStatus("✅ HTS allowance granted!");
 
       // --- Listing via Helper ---
       setStatus("⏳ 2/2: Listing on marketplace...");

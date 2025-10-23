@@ -5,7 +5,10 @@ import {
     Client,
     ContractExecuteTransaction,
     PrivateKey,
-    Hbar
+    Hbar,
+    AccountAllowanceApproveTransaction,
+    TokenId,
+    NftId
 } from "@hashgraph/sdk";
 
 // --- 1. LIVE CONTRACT ADDRESSES (Updated) ---
@@ -93,6 +96,28 @@ export async function executeContractFunction(accountId, privateKey, contractId,
     const txResponse = await contractExecuteTx.execute(client);
 
     // 5. Return the receipt
+    const receipt = await txResponse.getReceipt(client);
+    return receipt;
+}
+
+// --- 8. HTS Allowance Helper ---
+export async function setNftAllowance(accountId, privateKey, hederaTokenId, spenderAccountIdString, nftSerial) {
+    // 1. Setup Client
+    const client = Client.forTestnet();
+    const operatorId = AccountId.fromString(accountId);
+    const operatorKey = PrivateKey.fromStringECDSA(privateKey.slice(2)); // Remove '0x'
+    client.setOperator(operatorId, operatorKey);
+
+    // 2. Build HTS Allowance Transaction
+    const spenderAccountId = AccountId.fromString(spenderAccountIdString);
+    const nftId = new NftId(TokenId.fromString(hederaTokenId), nftSerial);
+    const allowanceTx = new AccountAllowanceApproveTransaction()
+        .approveTokenNftAllowance(nftId, operatorId, spenderAccountId);
+
+    // 3. Sign and execute
+    const txResponse = await allowanceTx.execute(client);
+
+    // 4. Return the receipt
     const receipt = await txResponse.getReceipt(client);
     return receipt;
 }
