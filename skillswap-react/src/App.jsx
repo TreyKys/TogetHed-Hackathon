@@ -157,7 +157,7 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const { tokenId: mintedTokenId, assetTokenId: newAssetTokenId, transactionHash } = data;
+      const { tokenId: mintedTokenId, assetTokenId: newAssetTokenId, transactionHash, mintedToAddress } = data;
       setTokenId(mintedTokenId);
       setAssetTokenId(newAssetTokenId);
       setStatus(`✅ Mint transaction sent! Hash: ${transactionHash}. Verifying ownership...`);
@@ -165,6 +165,11 @@ function App() {
       // --- Restore Verification Polling ---
       const userAssetTokenContract = getAssetTokenContract(); // Read-only provider
       const expectedOwner = toEvmAddress(accountId);
+
+      console.log("[DIAGNOSTIC] Expected Owner:", expectedOwner);
+      console.log("[DIAGNOSTIC] Minted To Address:", mintedToAddress);
+      console.log("[DIAGNOSTIC] Do they match?", expectedOwner.toLowerCase() === mintedToAddress.toLowerCase());
+
       let isOwner = false;
       const maxRetries = 10;
       const retryDelay = 3000; // 3 seconds

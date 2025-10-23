@@ -169,7 +169,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       const transactionHash = receipt.hash;
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       console.log(`Transaction Details: Hash: ${transactionHash}, Status: ${receipt.status === 1 ? 'Success' : 'Failed'}`);
-      return response.status(200).send({ tokenId: mintedTokenId, assetTokenId: assetTokenContractId, transactionHash });
+      return response.status(200).send({ tokenId: mintedTokenId, assetTokenId: assetTokenContractId, transactionHash, mintedToAddress: userEvmAddress });
 
     } catch (error) {
       // Handle common Hedera errors with actionable messages
