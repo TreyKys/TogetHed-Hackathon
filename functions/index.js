@@ -131,7 +131,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
         console.log(`[DIAGNOSTIC] Calling safeMint with the following userEvmAddress: ${userEvmAddress}`);
 
         tx = await assetToken.safeMint(
-          userEvmAddress,
+          userEvmAddress, // This is the EVM address of the recipient
           assetType,
           quality,
           location,
