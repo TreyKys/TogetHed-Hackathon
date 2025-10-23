@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey, AccountId } from '@hashgraph/sdk';
+import { PrivateKey, Client, ContractFunctionParameters } from '@hashgraph/sdk';
 import {
   getAssetTokenContract,
   getEscrowContract,
@@ -17,6 +17,7 @@ function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
   const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
+  const [client, setClient] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
@@ -44,7 +45,15 @@ function App() {
         setStatus("Restoring your secure vault...");
         const provider = getProvider();
         const loadedSigner = new ethers.Wallet(storedKey, provider);
+
+        // --- NEW: Create and configure Hedera Client ---
+        const hederaClient = Client.forTestnet();
+        const privateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
+        hederaClient.setOperator(storedAccountId, privateKey);
+        // ---------------------------------------------
+
         setSigner(loadedSigner);
+        setClient(hederaClient);
         setAccountId(storedAccountId);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
@@ -88,7 +97,13 @@ function App() {
       const provider = getProvider();
       const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
 
+      // --- NEW: Create and configure Hedera Client ---
+      const hederaClient = Client.forTestnet();
+      hederaClient.setOperator(newAccountId, newPrivateKey);
+      // ---------------------------------------------
+
       setSigner(newSigner);
+      setClient(hederaClient);
       setAccountId(newAccountId);
 
       setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
@@ -182,27 +197,31 @@ function App() {
   };
 
   const handleList = async () => {
-    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    if (!client || !tokenId) return alert("Please mint an NFT first.");
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
-      const userAssetTokenContract = getAssetTokenContract(signer);
-      const userEscrowContract = getEscrowContract(signer);
-
-      setStatus("⏳ 1/2: Approving marketplace for all your tokens...");
-      try {
-        const approveTx = await userAssetTokenContract.setApprovalForAll(escrowContractAddress, true, { gasLimit: 1_000_000 });
-        await approveTx.wait();
-        setStatus("✅ Marketplace approved!");
-      } catch (e) {
-        console.warn("Approval transaction failed, proceeding anyway. This may be because the marketplace is already approved.", e);
-        setStatus("⚠️ Approval failed or skipped. Proceeding to list...");
-      }
+      // --- REFACTORED: Use Hedera SDK Transaction ---
+      setStatus("⏳ 1/2: Approving marketplace...");
+      await executeContractFunction(
+        client,
+        assetTokenContractAddress,
+        "setApprovalForAll",
+        new ContractFunctionParameters().addAddress(escrowContractAddress).addBool(true),
+        1_000_000
+      );
+      setStatus("✅ Marketplace approved!");
 
       setStatus("⏳ 2/2: Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
-      await listTx.wait();
+      const priceInTinybars = 50 * 1e8; // 50 HBAR (as a number)
+      await executeContractFunction(
+        client,
+        escrowContractAddress,
+        "listAsset",
+        new ContractFunctionParameters().addUint256(tokenId).addUint256(priceInTinybars),
+        1_000_000
+      );
+      // --- END REFACTOR ---
 
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
@@ -216,18 +235,20 @@ function App() {
   };
 
   const handleBuy = async () => {
-    if (!signer || !tokenId) return alert("No item listed for sale.");
+    if (!client || !tokenId) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const priceInWeibars = ethers.parseEther("50");
-
-      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
-        value: priceInWeibars,
-        gasLimit: 1000000
-      });
-      await fundTx.wait();
+      // --- REFACTORED: Use Hedera SDK Transaction ---
+      await executeContractFunction(
+        client,
+        escrowContractAddress,
+        "fundEscrow",
+        new ContractFunctionParameters().addUint256(tokenId),
+        1_000_000,
+        50 // Payable amount in HBAR
+      );
+      // --- END REFACTOR ---
 
       setFlowState("FUNDED");
       setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
@@ -241,15 +262,19 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    if (!client || !tokenId) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
-        gasLimit: 1000000
-      });
-      await confirmTx.wait();
+      // --- REFACTORED: Use Hedera SDK Transaction ---
+      await executeContractFunction(
+        client,
+        escrowContractAddress,
+        "confirmDelivery",
+        new ContractFunctionParameters().addUint256(tokenId),
+        1_000_000
+      );
+      // --- END REFACTOR ---
 
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
