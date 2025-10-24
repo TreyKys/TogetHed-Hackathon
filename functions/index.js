@@ -80,6 +80,56 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
   });
 });
 
+async function getTokenIdFromMirrorNode(txId) {
+    const maxRetries = 20; // 60 seconds total
+    const retryDelay = 3000; // 3 seconds
+    // Format the txId for the mirror node query (replace '@' and '.')
+    const formattedTxId = txId.replace(/@/g, '-').replace(/\./g, '-');
+
+    console.log(`Starting mirror node poll for transaction ID: ${txId} (formatted as ${formattedTxId})`);
+
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const url = `https://testnet.mirrornode.hedera.com/api/v1/transactions/${formattedTxId}`;
+            console.log(`(Attempt ${i + 1}/${maxRetries}) Polling URL: ${url}`);
+
+            const response = await fetch(url);
+
+            if (response.status === 200) {
+                const data = await response.json();
+                console.log(`(Attempt ${i + 1}) Received 200 OK. Data:`, JSON.stringify(data, null, 2));
+
+                if (data.transactions && data.transactions.length > 0) {
+                    const txDetails = data.transactions[0];
+                    if (txDetails.nft_transfers && txDetails.nft_transfers.length > 0) {
+                        const mintTransfer = txDetails.nft_transfers.find(t => t.sender_account_id === '0.0.0');
+                        if (mintTransfer) {
+                            console.log(`Found mint transfer in mirror node. Serial number: ${mintTransfer.serial_number}`);
+                            return mintTransfer.serial_number.toString();
+                        } else {
+                             console.log("No mint transfer (sender_account_id === '0.0.0') found in nft_transfers array.");
+                        }
+                    } else {
+                         console.log("No 'nft_transfers' array in the transaction details.");
+                    }
+                } else {
+                    console.log("No 'transactions' array in the response data.");
+                }
+            } else {
+                console.warn(`(Attempt ${i + 1}) Mirror node returned status: ${response.status}`);
+            }
+        } catch (e) {
+            console.error(`(Attempt ${i + 1}/${maxRetries}) Mirror node lookup threw an error: ${e.message}`);
+        }
+
+        console.log(`Waiting ${retryDelay}ms before next attempt...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
+
+    console.error(`Polling timed out after ${maxRetries} attempts. Could not find token ID via mirror node.`);
+    return null;
+}
+
 exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdminPrivateKey] }, (request, response) => {
   cors(request, response, async () => {
     if (request.method !== "POST") {
@@ -125,13 +175,21 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       const receipt = await txResponse.getReceipt(client);
 
       // --- Extract Serial Number from Native Receipt ---
-      if (!receipt.serials || receipt.serials.length === 0) {
-        console.error("Full Hedera Receipt:", JSON.stringify(receipt, null, 2));
-        throw new Error("Transaction was successful, but no new serial numbers were found in the receipt.");
+      let mintedTokenId;
+      if (receipt.serials && receipt.serials.length > 0) {
+        // Happy path: serial number is in the receipt.
+        mintedTokenId = receipt.serials[0].toString();
+        console.log("Successfully extracted serial number from receipt.");
+      } else {
+        // Workaround for testnet regression: poll the mirror node.
+        console.warn("Receipt did not contain serial numbers. Attempting workaround by polling the mirror node...");
+        const txId = txResponse.transactionId.toString();
+        mintedTokenId = await getTokenIdFromMirrorNode(txId);
+        if (!mintedTokenId) {
+            console.error("Full Hedera Receipt:", JSON.stringify(receipt, null, 2));
+            throw new Error("Could not retrieve minted token ID from either the receipt or the mirror node.");
+        }
       }
-
-      // The serials array contains BigNumber objects, convert the first one to a string.
-      const mintedTokenId = receipt.serials[0].toString();
 
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       return response.status(200).send({
