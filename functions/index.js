@@ -6,7 +6,9 @@ const {
   AccountCreateTransaction,
   Hbar,
   PublicKey,
-  AccountId
+  AccountId,
+  ContractExecuteTransaction,
+  ContractFunctionParameters
 } = require("@hashgraph/sdk");
 const cors = require("cors")({ origin: true });
 const ethers = require("ethers");
@@ -78,36 +80,6 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
   });
 });
 
-async function getTokenIdFromMirrorNode(txHash) {
-    const maxRetries = 10;
-    const retryDelay = 3000; // 3 seconds
-    const txId = txHash.startsWith('0x') ? txHash.substring(2) : txHash;
-
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            const url = `https://testnet.mirrornode.hedera.com/api/v1/transactions/${txId}`;
-            const response = await fetch(url);
-            if (response.status === 200) {
-                const data = await response.json();
-                if (data.transactions && data.transactions.length > 0) {
-                    const txDetails = data.transactions[0];
-                    if (txDetails.nft_transfers && txDetails.nft_transfers.length > 0) {
-                        // Find the transfer where the sender is the zero address (a mint operation)
-                        const mintTransfer = txDetails.nft_transfers.find(t => t.sender_account_id === '0.0.0');
-                        if (mintTransfer) {
-                            return mintTransfer.serial_number.toString();
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn(`(Attempt ${i + 1}/${maxRetries}) Mirror node lookup failed: ${e.message}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
-    return null;
-}
-
 exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdminPrivateKey] }, (request, response) => {
   cors(request, response, async () => {
     if (request.method !== "POST") {
@@ -118,73 +90,54 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       if (!accountId || !assetType || !quality || !location) {
         throw new Error("Missing required fields: accountId, assetType, quality, location.");
       }
+
+      const adminAccountId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
-      if (!rawAdminPrivateKey) {
-        throw new Error("Admin private key is not set as a secret in this V2 function environment.");
+      if (!rawAdminPrivateKey || !adminAccountId) {
+        throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
       }
 
-      // --- Ethers.js Setup ---
-      const hederaTestnet = {
-        name: "Hedera Testnet",
-        chainId: 296,
-        ensAddress: null, // Hedera does not support ENS
-      };
-      const provider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api", hederaTestnet);
-      const adminWallet = new ethers.Wallet(`0x${rawAdminPrivateKey}`, provider);
+      // --- Hedera Client Setup ---
+      const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
+      const client = Client.forTestnet();
+      client.setOperator(adminAccountId, adminPrivateKey);
 
-      // Convert contract and user account to EVM addresses
-      const assetTokenAddress = toEvmAddress(assetTokenContractId);
-      if (!assetTokenAddress) {
-        throw new Error("Invalid assetTokenContractId format.");
-      }
+      // --- Parameter Validation & Conversion ---
       const userEvmAddress = toEvmAddress(accountId);
-      if (!userEvmAddress) {
-        throw new Error("Invalid accountId format. Must be a valid Hedera AccountId.");
-      }
-      if (!isValidEvmAddress(userEvmAddress)) {
-        throw new Error("User EVM address is invalid. ENS names are not supported on Hedera.");
+      if (!userEvmAddress || !isValidEvmAddress(userEvmAddress)) {
+        throw new Error("Invalid user accountId format. Must be a valid Hedera AccountId or EVM address.");
       }
 
-      const assetToken = new ethers.Contract(assetTokenAddress, assetTokenABI, adminWallet);
+      // --- Minting Logic via Hedera SDK ---
+      const gasLimit = 1_000_000; // A generous gas limit
 
-      // --- Minting Logic ---
-      let tx, receipt;
-      try {
-        // Estimate gas and add a 20% buffer
-        const estimatedGas = await assetToken.safeMint.estimateGas(
-          userEvmAddress, assetType, quality, location
+      const contractExecuteTx = new ContractExecuteTransaction()
+        .setContractId(assetTokenContractId)
+        .setGas(gasLimit)
+        .setFunction("safeMint", new ContractFunctionParameters()
+            .addAddress(userEvmAddress)
+            .addString(assetType)
+            .addString(quality)
+            .addString(location)
         );
-        const gasLimit = Math.ceil(Number(estimatedGas) * 1.2);
 
-        tx = await assetToken.safeMint(
-          userEvmAddress,
-          assetType,
-          quality,
-          location,
-          { gasLimit }
-        );
-        receipt = await tx.wait();
-      } catch (err) {
-        if (err.code === "UNSUPPORTED_OPERATION" && err.operation === "getEnsAddress") {
-          throw new Error("ENS is not supported on Hedera. Use a direct EVM address.");
-        }
-        if (err.code === "INSUFFICIENT_GAS") {
-          throw new Error("Transaction failed due to insufficient gas. Please try again with a higher gas limit.");
-        }
-        throw err;
+      const txResponse = await contractExecuteTx.execute(client);
+      const receipt = await txResponse.getReceipt(client);
+
+      // --- Extract Serial Number from Native Receipt ---
+      if (!receipt.serials || receipt.serials.length === 0) {
+        console.error("Full Hedera Receipt:", JSON.stringify(receipt, null, 2));
+        throw new Error("Transaction was successful, but no new serial numbers were found in the receipt.");
       }
 
-      // --- Mirror Node Polling for Token ID ---
-      const mintedTokenId = await getTokenIdFromMirrorNode(receipt.hash);
-      if (!mintedTokenId) {
-          throw new Error("Could not retrieve minted token ID from the mirror node.");
-      }
+      // The serials array contains BigNumber objects, convert the first one to a string.
+      const mintedTokenId = receipt.serials[0].toString();
 
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       return response.status(200).send({
         tokenId: mintedTokenId,
         assetTokenId: assetTokenContractId,
-        transactionHash: receipt.hash
+        transactionHash: txResponse.transactionHash.toString('hex')
       });
 
     } catch (error) {
