@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { Client, PrivateKey, TokenAssociateTransaction } from '@hashgraph/sdk';
+import { Client, PrivateKey, TokenAssociateTransaction, TokenInfoQuery } from '@hashgraph/sdk';
 
 // Import hardcoded credentials and contract instances from the refactored hedera.js
 import {
@@ -37,36 +37,59 @@ function App() {
         setStatus("🚀 Initiating minting process...");
 
         try {
-            // --- 1. Associate Token (Hedera SDK) ---
-            setStatus("⏳ 1/3: Associating token with your account...");
-            console.log("Step 1: Starting Token Association...");
-            console.log(`Using assetTokenId: ${assetTokenId}`); // Add this log
+            // --- 0. Verify Token Existence (Hedera SDK) ---
+            setStatus("⏳ 0/4: Verifying token existence...");
+            console.log("Step 0: Verifying token existence...");
+            console.log(`Using assetTokenId: ${assetTokenId}`);
 
-            // Create a Hedera SDK client
             const client = Client.forTestnet();
             const hederaPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
             client.setOperator(accountId, hederaPrivateKey);
 
-            // Create and execute the association transaction
-            const assocTx = await new TokenAssociateTransaction()
-                .setAccountId(accountId)
-                .setTokenIds([assetTokenId])
-                .freezeWith(client);
-
-            const signedAssocTx = await assocTx.sign(hederaPrivateKey);
-            const assocResponse = await signedAssocTx.execute(client);
-            const assocReceipt = await assocResponse.getReceipt(client);
-
-            if (assocReceipt.status.toString() !== 'SUCCESS') {
-                throw new Error(`Token association failed with status: ${assocReceipt.status}`);
+            try {
+                const info = await new TokenInfoQuery()
+                    .setTokenId(assetTokenId)
+                    .execute(client);
+                console.log("✅ TokenInfoQuery successful:", JSON.stringify(info, null, 2));
+                setStatus("✅ 0/4: Token found on network!");
+            } catch (error) {
+                console.error("TokenInfoQuery failed:", error);
+                throw new Error(`Token verification failed: The token ID '${assetTokenId}' is invalid or does not exist on the testnet.`);
             }
 
-            console.log("✅ Token Association Successful!");
-            setStatus("✅ 1/3: Association successful! Proceeding to mint...");
+
+            // --- 1. Associate Token (Hedera SDK) ---
+            setStatus("⏳ 1/4: Associating token with your account...");
+            console.log("Step 1: Starting Token Association...");
+
+            try {
+                const assocTx = await new TokenAssociateTransaction()
+                    .setAccountId(accountId)
+                    .setTokenIds([assetTokenId])
+                    .freezeWith(client);
+
+                const signedAssocTx = await assocTx.sign(hederaPrivateKey);
+                const assocResponse = await signedAssocTx.execute(client);
+                const assocReceipt = await assocResponse.getReceipt(client);
+
+                if (assocReceipt.status.toString() !== 'SUCCESS') {
+                    throw new Error(`Token association failed with status: ${assocReceipt.status}`);
+                }
+
+                console.log("✅ Token Association Successful!");
+                setStatus("✅ 1/4: Association successful! Proceeding to mint...");
+            } catch (error) {
+                if (error.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
+                    console.log("✅ Account is already associated with the token.");
+                    setStatus("✅ 1/4: Association already exists! Proceeding to mint...");
+                } else {
+                    throw error; // Re-throw other errors
+                }
+            }
 
 
             // --- 2. Mint NFT (Ethers.js) ---
-            setStatus("⏳ 2/3: Minting the NFT via smart contract...");
+            setStatus("⏳ 2/4: Minting the NFT via smart contract...");
             console.log("Step 2: Starting NFT Mint...");
 
             const assetTokenContractWithSigner = baseAssetTokenContract.connect(signer);
@@ -82,11 +105,11 @@ function App() {
             const receipt = await txResponse.wait();
             console.log("✅ NFT Mint Transaction Successful!");
             console.log("Full Mint Receipt:", JSON.stringify(receipt, null, 2));
-            setStatus("✅ 2/3: Mint transaction confirmed!");
+            setStatus("✅ 2/4: Mint transaction confirmed!");
 
 
             // --- 3. Parse Token ID (Robustly) ---
-            setStatus("⏳ 3/3: Parsing transaction receipt for Token ID...");
+            setStatus("⏳ 3/4: Parsing transaction receipt for Token ID...");
             console.log("Step 3: Parsing Token ID from receipt logs...");
 
             let mintedTokenId = null;
@@ -110,7 +133,7 @@ function App() {
             }
 
             console.log(`✅ Token ID Found: ${mintedTokenId}`);
-            setStatus(`✅ 3/3: Successfully parsed Token ID: ${mintedTokenId}`);
+            setStatus(`✅ 3/4: Successfully parsed Token ID: ${mintedTokenId}`);
 
 
             // --- 4. Update State ---
@@ -179,8 +202,7 @@ function CustomStyles() {
     .container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); overflow: hidden; display: flex; flex-direction: column; font-family: Arial, sans-serif;}
     .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; }
     .header h1 { font-size: 28px; margin: 0; }
-    .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
-    .page-container { padding: 20px; }
+    .header p { font-size: 12px; opacity: 0.8;.page-container { padding: 20px; }
     .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 15px;}
     .hedera-button { background: #2DD87F; color: black; border: none; padding: 14px; border-radius: 12px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; font-weight: 600; transition: background 0.3s, opacity 0.3s;}
     .hedera-button:hover:not(:disabled) { background: #25b366; }
