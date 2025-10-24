@@ -78,6 +78,36 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
   });
 });
 
+async function getTokenIdFromMirrorNode(txHash) {
+    const maxRetries = 10;
+    const retryDelay = 3000; // 3 seconds
+    const txId = txHash.startsWith('0x') ? txHash.substring(2) : txHash;
+
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const url = `https://testnet.mirrornode.hedera.com/api/v1/transactions/${txId}`;
+            const response = await fetch(url);
+            if (response.status === 200) {
+                const data = await response.json();
+                if (data.transactions && data.transactions.length > 0) {
+                    const txDetails = data.transactions[0];
+                    if (txDetails.nft_transfers && txDetails.nft_transfers.length > 0) {
+                        // Find the transfer where the sender is the zero address (a mint operation)
+                        const mintTransfer = txDetails.nft_transfers.find(t => t.sender_account_id === '0.0.0');
+                        if (mintTransfer) {
+                            return mintTransfer.serial_number.toString();
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn(`(Attempt ${i + 1}/${maxRetries}) Mirror node lookup failed: ${e.message}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
+    return null;
+}
+
 exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdminPrivateKey] }, (request, response) => {
   cors(request, response, async () => {
     if (request.method !== "POST") {
@@ -144,23 +174,11 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
         throw err;
       }
 
-      if (!receipt.logs || receipt.logs.length === 0) {
-        throw new Error("Transaction receipt contained no logs. Cannot determine Token ID.");
+      // --- Mirror Node Polling for Token ID ---
+      const mintedTokenId = await getTokenIdFromMirrorNode(receipt.hash);
+      if (!mintedTokenId) {
+          throw new Error("Could not retrieve minted token ID from the mirror node.");
       }
-
-      // --- Event Parsing ---
-      const transferEvent = receipt.logs.map(log => {
-        try {
-          return assetToken.interface.parseLog(log);
-        } catch (e) {
-          return null;
-        }
-      }).find(log => log && log.name === "Transfer");
-
-      if (!transferEvent) {
-        throw new Error("Expected a Transfer event but did not find one in the receipt.");
-      }
-      const mintedTokenId = transferEvent.args.tokenId.toString();
 
       console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
       return response.status(200).send({
