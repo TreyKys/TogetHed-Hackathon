@@ -9,11 +9,11 @@ if (typeof window !== 'undefined') {
 // --- Hardcoded Credentials & Configuration (Temporary for Debugging) ---
 export const accountId = "0.0.6928410";
 export const rawPrivateKey = "cb7a3a82a8457f28bac3142ba94a7aac30dc68e23cb76f3e103be391b3850d62";
-export const assetTokenId = "0.0.7118532"; // Hedera 0.0.X format
+export const assetTokenId = "0.0.7091820"; // Hedera 0.0.X format
 
 // --- Contract Addresses (0x format) ---
-export const escrowContractAddress = "0x321C8FA98372A5C702798F4bfccA13296235B597";
-export const assetTokenContractAddress = "0xD46d08Ae4A7bF06B56f950b406b7C8eFC05236cD";
+export const escrowContractAddress = "0x3E3E7149c0F74519112Ca7F88012D6b9CbEDBea9";
+export const assetTokenContractAddress = "0xa5b41b8b3d74d0a50e394a98fe562fcec8260200";
 
 
 // --- Contract ABIs ---
