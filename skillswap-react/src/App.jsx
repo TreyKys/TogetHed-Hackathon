@@ -1,199 +1,277 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { Client, PrivateKey, TokenAssociateTransaction, TokenInfoQuery } from '@hashgraph/sdk';
-
-// Import hardcoded credentials and contract instances from the refactored hedera.js
+import { PrivateKey } from '@hashgraph/sdk';
 import {
-    signer as hederaSigner,
-    assetTokenContract as baseAssetTokenContract,
-    escrowContract as baseEscrowContract,
-    accountId as hardcodedAccountId,
-    rawPrivateKey as hardcodedRawPrivateKey,
-    assetTokenId,
-    assetTokenContractABI,
-    escrowContractAddress,
+  getAssetTokenContract,
+  getEscrowContract,
+  escrowContractAddress,
+  getProvider
 } from './hedera.js';
 
+// ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
+const cloudFunctionUrl = "https://createaccount-cehqwvb4aq-uc.a.run.app";
+const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
+
 function App() {
-    // Component State
-    const [status, setStatus] = useState("Ready. Click 'Mint RWA NFT' to start.");
-    const [isTransactionLoading, setIsTransactionLoading] = useState(false);
-    const [flowState, setFlowState] = useState('INITIAL');
-    const [tokenId, setTokenId] = useState(null);
-
-    // Hardcoded credentials are used directly, no need for useState for signer/client/accountId
-    const signer = hederaSigner;
-    const accountId = hardcodedAccountId;
-    const rawPrivateKey = hardcodedRawPrivateKey;
-
-    const handleMint = async () => {
-        if (!signer || !accountId || !rawPrivateKey) {
-            alert("Credentials are not initialized.");
-            return;
-        }
-
-        setIsTransactionLoading(true);
-        setStatus("🚀 Initiating minting process...");
-
-        try {
-            // --- 0. Verify Token Existence (Hedera SDK) ---
-            setStatus("⏳ 0/4: Verifying token existence...");
-            console.log("Step 0: Verifying token existence...");
-            console.log(`Using assetTokenId: ${assetTokenId}`);
-
-            const client = Client.forTestnet();
-            const hederaPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
-            client.setOperator(accountId, hederaPrivateKey);
-
-            try {
-                const info = await new TokenInfoQuery()
-                    .setTokenId(assetTokenId)
-                    .execute(client);
-                console.log("✅ TokenInfoQuery successful:", JSON.stringify(info, null, 2));
-                setStatus("✅ 0/4: Token found on network!");
-            } catch (error) {
-                console.error("TokenInfoQuery failed:", error);
-                throw new Error(`Token verification failed: The token ID '${assetTokenId}' is invalid or does not exist on the testnet.`);
-            }
+  const [status, setStatus] = useState("Welcome. Please create your secure vault.");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [signer, setSigner] = useState(null);
+  const [accountId, setAccountId] = useState(null);
+  const [flowState, setFlowState] = useState('INITIAL');
+  const [tokenId, setTokenId] = useState(null);
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
 
-            // --- 1. Associate Token (Hedera SDK) ---
-            setStatus("⏳ 1/4: Associating token with your account...");
-            console.log("Step 1: Starting Token Association...");
-
-            try {
-                const assocTx = await new TokenAssociateTransaction()
-                    .setAccountId(accountId)
-                    .setTokenIds([assetTokenId])
-                    .freezeWith(client);
-
-                const signedAssocTx = await assocTx.sign(hederaPrivateKey);
-                const assocResponse = await signedAssocTx.execute(client);
-                const assocReceipt = await assocResponse.getReceipt(client);
-
-                if (assocReceipt.status.toString() !== 'SUCCESS') {
-                    throw new Error(`Token association failed with status: ${assocReceipt.status}`);
-                }
-
-                console.log("✅ Token Association Successful!");
-                setStatus("✅ 1/4: Association successful! Proceeding to mint...");
-            } catch (error) {
-                if (error.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
-                    console.log("✅ Account is already associated with the token.");
-                    setStatus("✅ 1/4: Association already exists! Proceeding to mint...");
-                } else {
-                    throw error; // Re-throw other errors
-                }
-            }
-
-
-            // --- 2. Mint NFT (Ethers.js) ---
-            setStatus("⏳ 2/4: Minting the NFT via smart contract...");
-            console.log("Step 2: Starting NFT Mint...");
-
-            const assetTokenContractWithSigner = baseAssetTokenContract.connect(signer);
-            const txResponse = await assetTokenContractWithSigner.safeMint(
-                signer.address,
-                "Maize Harvest Future",
-                "Grade A",
-                "Ikorodu, Nigeria", {
-                    gasLimit: 1000000
-                }
-            );
-
-            const receipt = await txResponse.wait();
-            console.log("✅ NFT Mint Transaction Successful!");
-            console.log("Full Mint Receipt:", JSON.stringify(receipt, null, 2));
-            setStatus("✅ 2/4: Mint transaction confirmed!");
-
-
-            // --- 3. Parse Token ID (Robustly) ---
-            setStatus("⏳ 3/4: Parsing transaction receipt for Token ID...");
-            console.log("Step 3: Parsing Token ID from receipt logs...");
-
-            let mintedTokenId = null;
-            const iface = new ethers.Interface(assetTokenContractABI);
-
-            for (const log of receipt.logs) {
-                try {
-                    const parsedLog = iface.parseLog(log);
-                    if (parsedLog && parsedLog.name === "Transfer") {
-                        mintedTokenId = parsedLog.args.tokenId.toString();
-                        break; // Exit loop once found
-                    }
-                } catch (e) {
-                    // Ignore logs that don't match the ABI
-                }
-            }
-
-
-            if (!mintedTokenId) {
-                throw new Error("Could not parse Token ID from the transaction receipt.");
-            }
-
-            console.log(`✅ Token ID Found: ${mintedTokenId}`);
-            setStatus(`✅ 3/4: Successfully parsed Token ID: ${mintedTokenId}`);
-
-
-            // --- 4. Update State ---
-            setTokenId(mintedTokenId);
-            setFlowState("MINTED");
-            setStatus(`🎉 Minting Complete! Your Token ID is ${mintedTokenId}.`);
-
-        } catch (error) {
-            console.error("Minting failed:", error);
-            setStatus(`❌ Minting Failed: ${error.message}`);
-            // Log the full error object for more details
-            console.error("Full error object:", error);
-        } finally {
-            setIsTransactionLoading(false);
-        }
+  // --- Check for an existing wallet on load ---
+  useEffect(() => {
+    const loadWallet = async () => {
+      const storedKey = localStorage.getItem('integro-private-key');
+      const storedAccountId = localStorage.getItem('integro-account-id');
+      if (storedKey && storedAccountId) {
+        setStatus("Restoring your secure vault...");
+        const provider = getProvider();
+        const loadedSigner = new ethers.Wallet(storedKey, provider);
+        setSigner(loadedSigner);
+        setAccountId(storedAccountId);
+        setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
+      }
     };
+    loadWallet();
+  }, []);
 
+  // --- Create a new wallet via the Account Factory ---
+  const handleCreateVault = async () => {
+    setIsProcessing(true);
+    setStatus("1/3: Generating secure keys on your device...");
+    try {
+      // 1. Generate new keys on the device
+      const newPrivateKey = PrivateKey.generateECDSA();
+      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
+      const newPublicKey = newPrivateKey.publicKey.toStringRaw();
 
-    const renderUI = () => (
+      // 2. Call our backend to create the account on Hedera
+      setStatus("2/3: Calling the Account Factory...");
+      const response = await fetch(cloudFunctionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicKey: newPublicKey }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Backend request failed.');
+      }
+      const newAccountId = data.accountId;
+
+      // 3. Save everything and create the signer
+      setStatus("3/3: Finalizing your vault...");
+      localStorage.setItem('integro-private-key', newPrivateKeyHex);
+      localStorage.setItem('integro-account-id', newAccountId);
+
+      // 4. Add a delay for network propagation
+      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      const provider = getProvider();
+      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+
+      setSigner(newSigner);
+      setAccountId(newAccountId);
+
+      setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
+    } catch (error) {
+      console.error("Vault creation failed:", error);
+      setStatus(`❌ Vault creation failed: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleMint = async () => {
+    if (!signer || !accountId) return alert("Signer not initialized.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Minting RWA NFT...");
+    try {
+      // Step 1: Associate the token with the user's account (client-side)
+      setStatus("⏳ 1/2: Associating token with your account...");
+      try {
+        const userAssetTokenContract = getAssetTokenContract(signer);
+        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
+        await assocTx.wait();
+        setStatus("✅ Association successful!");
+      } catch (e) {
+        // This is a workaround. The contract reverts with a generic "HTS association failed"
+        // for multiple reasons, including if the token is already associated.
+        // We'll optimistically assume the association is already in place and proceed.
+        // The backend mint call will fail if the association is truly missing.
+        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
+        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
+      }
+
+      // Step 2: Call the backend to mint the token (server-side)
+      setStatus("⏳ 2/2: Calling secure backend to mint...");
+      const response = await fetch(mintRwaViaUssdUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: accountId,
+          assetType: "Yam Harvest Future",
+          quality: "Grade A",
+          location: "Ikorodu, Nigeria"
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Backend minting request failed.');
+      }
+
+      const mintedTokenId = data.tokenId;
+      setTokenId(mintedTokenId);
+      setFlowState("MINTED");
+      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+
+    } catch (error) {
+      console.error("Minting failed:", error);
+      setStatus(`❌ Minting Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
+  };
+
+  const handleList = async () => {
+    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Listing NFT for sale...");
+    try {
+      const userAssetTokenContract = getAssetTokenContract(signer);
+      const userEscrowContract = getEscrowContract(signer);
+
+      setStatus("⏳ Approving Escrow contract...");
+      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
+      await approveTx.wait();
+      setStatus("✅ Approval successful!");
+
+      setStatus("⏳ Listing on marketplace...");
+      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
+      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
+      await listTx.wait();
+
+      setFlowState("LISTED");
+      setStatus(`✅ NFT Listed for 50 HBAR!`);
+
+    } catch (error) {
+      console.error("Listing failed:", error);
+      setStatus(`❌ Listing Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
+  };
+
+  const handleBuy = async () => {
+    if (!signer || !tokenId) return alert("No item listed for sale.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Buying NFT (Funding Escrow)...");
+    try {
+      const userEscrowContract = getEscrowContract(signer);
+      const priceInWeibars = ethers.parseEther("50");
+
+      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
+        value: priceInWeibars,
+        gasLimit: 1000000
+      });
+      await fundTx.wait();
+
+      setFlowState("FUNDED");
+      setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
+
+    } catch (error) {
+      console.error("Purchase failed:", error);
+      setStatus(`❌ Purchase Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    setIsTransactionLoading(true);
+    setStatus("🚀 Confirming Delivery...");
+    try {
+      const userEscrowContract = getEscrowContract(signer);
+      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
+        gasLimit: 1000000
+      });
+      await confirmTx.wait();
+
+      setFlowState("SOLD");
+      setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
+
+    } catch (error)      {
+      console.error("Confirmation failed:", error);
+      setStatus(`❌ Confirmation Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
+    }
+  };
+
+  // --- UI Rendering ---
+
+  const renderLoggedOutUI = () => (
+    <div className="card">
+      <h3>Welcome to the Future of RWAs</h3>
+      <p>Create a secure, seedless vault to manage your digital assets on Hedera.</p>
+      <button onClick={handleCreateVault} className="hedera-button">
+        Create Your Secure Vault
+      </button>
+    </div>
+  );
+
+  const renderLoggedInUI = () => (
+    <div className="card">
+      <h3>Golden Path Walkthrough</h3>
+      <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+
+      <div className="button-group">
+        <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
+          1. Mint RWA NFT
+        </button>
+        <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
+          2. List NFT for 50 HBAR
+        </button>
+        <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
+          3. Buy Now (Fund Escrow)
+        </button>
+        <button onClick={handleConfirm} className="hedera-button" disabled={isTransactionLoading || flowState !== 'FUNDED'}>
+          4. Confirm Delivery
+        </button>
+      </div>
+
+      {flowState === 'SOLD' && (
+        <div className="success-message">
+          🎉 Congratulations! The entire flow is complete.
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="container">
+      <div className="header"><h1>Integro Marketplace</h1><p>The "DID Identity Layer" Demo</p></div>
+      <div className="page-container">
         <div className="card">
-            <h3>Golden Path (Debug Mode)</h3>
-            <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
-
-            <div className="button-group">
-                <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
-                    1. Mint RWA NFT
-                </button>
-                {/* Placeholder buttons for future steps */}
-                <button className="hedera-button" disabled={true}>2. List NFT</button>
-                <button className="hedera-button" disabled={true}>3. Buy Now</button>
-                <button className="hedera-button" disabled={true}>4. Confirm Delivery</button>
-            </div>
-
-            {flowState === 'MINTED' && (
-                <div className="success-message">
-                    🎉 Congratulations! The minting process was successful.
-                </div>
-            )}
+          <h3>Connection Status</h3>
+          <div className={`status-message ${status.includes('✅') ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
+            {status}
+          </div>
         </div>
-    );
 
-    return (
-        <div className="container">
-            <div className="header"><h1>Integro Marketplace</h1><p>Debug Client: In-App Minter</p></div>
-            <div className="page-container">
-                <div className="card">
-                    <h3>Connection Status</h3>
-                    <div className="status-message status-info">
-                        <strong>Account ID:</strong> {accountId}
-                    </div>
-                     <div className={`status-message ${status.includes('✅') || status.includes('🎉') ? 'status-success' : status.includes('❌') ? 'status-error' : 'status-info'}`}>
-                        {status}
-                    </div>
-                </div>
+        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
 
-                {renderUI()}
-
-            </div>
-        </div>
-    );
+      </div>
+    </div>
+  );
 }
 
 // Styles remain the same
@@ -202,7 +280,8 @@ function CustomStyles() {
     .container { max-width: 480px; margin: 20px auto; background: #f9f9f9; border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); overflow: hidden; display: flex; flex-direction: column; font-family: Arial, sans-serif;}
     .header { background: linear-gradient(135deg, #1A1A1A, #000000); color: white; padding: 20px; text-align: center; }
     .header h1 { font-size: 28px; margin: 0; }
-    .header p { font-size: 12px; opacity: 0.8;.page-container { padding: 20px; }
+    .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+    .page-container { padding: 20px; }
     .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 15px;}
     .hedera-button { background: #2DD87F; color: black; border: none; padding: 14px; border-radius: 12px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; font-weight: 600; transition: background 0.3s, opacity 0.3s;}
     .hedera-button:hover:not(:disabled) { background: #25b366; }

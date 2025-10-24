@@ -13,7 +13,6 @@ package-lock.json
 # Build output
 dist
 build
-skillswap-contracts/cache/
 
 # Other
 .DS_Store
