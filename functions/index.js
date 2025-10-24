@@ -10,7 +10,7 @@ const {
   ContractExecuteTransaction,
   ContractFunctionParameters
 } = require("@hashgraph/sdk");
-const cors = require("cors")({ origin: true });
+const cors = require("cors")({ origin: ["http://localhost:5173", "http://localhost:5174", "https://integro-hed.netlify.app"] });
 const ethers = require("ethers");
 
 // Define secrets
