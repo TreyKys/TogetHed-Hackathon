@@ -1,12 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk';
+import { Buffer } from 'buffer';
+globalThis.Buffer = Buffer;
 import {
-  getAssetTokenContract,
-  getEscrowContract,
-  escrowContractAddress,
-  getProvider
+    PrivateKey,
+    AccountId,
+    Client,
+    TokenAssociateTransaction,
+    AccountAllowanceApproveTransaction,
+    NftId,
+} from '@hashgraph/sdk';
+
+import {
+    getProvider,
+    getEscrowContractWithSigner,
+    assetTokenId,
+    escrowContractAddress,
+    escrowContractAccountId,
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -20,6 +31,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
+  const [serialNumber, setSerialNumber] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
 
@@ -28,12 +40,20 @@ function App() {
     const loadWallet = async () => {
       const storedKey = localStorage.getItem('integro-private-key');
       const storedAccountId = localStorage.getItem('integro-account-id');
+      const storedTokenId = localStorage.getItem('integro-token-id');
+      const storedSerialNumber = localStorage.getItem('integro-serial-number');
+      const storedFlowState = localStorage.getItem('integro-flow-state');
+
       if (storedKey && storedAccountId) {
         setStatus("Restoring your secure vault...");
         const provider = getProvider();
-        const loadedSigner = new ethers.Wallet(storedKey, provider);
+        // IMPORTANT: Always prefix the raw private key with '0x' for ethers.js
+        const loadedSigner = new ethers.Wallet("0x" + storedKey, provider);
         setSigner(loadedSigner);
         setAccountId(storedAccountId);
+        if (storedTokenId) setTokenId(storedTokenId);
+        if (storedSerialNumber) setSerialNumber(storedSerialNumber);
+        if (storedFlowState) setFlowState(storedFlowState);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
       }
     };
@@ -45,17 +65,17 @@ function App() {
     setIsProcessing(true);
     setStatus("1/3: Generating secure keys on your device...");
     try {
-      // 1. Generate new keys on the device
-      const newPrivateKey = PrivateKey.generateECDSA();
-      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
-      const newPublicKey = newPrivateKey.publicKey.toStringRaw();
+      // 1. Generate new ED25519 keys on the device
+      const newPrivateKey = PrivateKey.generateED25519();
+      const newPublicKey = newPrivateKey.publicKey;
+      const newPrivateKeyRaw = newPrivateKey.toStringRaw();
 
       // 2. Call our backend to create the account on Hedera
       setStatus("2/3: Calling the Account Factory...");
       const response = await fetch(cloudFunctionUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicKey: newPublicKey }),
+        body: JSON.stringify({ publicKey: newPublicKey.toStringRaw() }),
       });
 
       const data = await response.json();
@@ -63,18 +83,15 @@ function App() {
         throw new Error(data.error || 'Backend request failed.');
       }
       const newAccountId = data.accountId;
+      setStatus(`2/3: Account ${newAccountId} created by factory.`);
 
       // 3. Save everything and create the signer
-      setStatus("3/3: Finalizing your vault...");
-      localStorage.setItem('integro-private-key', newPrivateKeyHex);
+      setStatus("3/3: Saving credentials and creating signer...");
+      localStorage.setItem('integro-private-key', newPrivateKeyRaw);
       localStorage.setItem('integro-account-id', newAccountId);
 
-      // 4. Add a delay for network propagation
-      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
       const provider = getProvider();
-      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+      const newSigner = new ethers.Wallet("0x" + newPrivateKeyRaw, provider);
 
       setSigner(newSigner);
       setAccountId(newAccountId);
@@ -89,28 +106,42 @@ function App() {
   };
 
   const handleMint = async () => {
-    if (!signer || !accountId) return alert("Signer not initialized.");
+    if (!accountId) return alert("Account not initialized.");
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
-    try {
-      // Step 1: Associate the token with the user's account (client-side)
-      setStatus("⏳ 1/2: Associating token with your account...");
-      try {
-        const userAssetTokenContract = getAssetTokenContract(signer);
-        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-        await assocTx.wait();
-        setStatus("✅ Association successful!");
-      } catch (e) {
-        // This is a workaround. The contract reverts with a generic "HTS association failed"
-        // for multiple reasons, including if the token is already associated.
-        // We'll optimistically assume the association is already in place and proceed.
-        // The backend mint call will fail if the association is truly missing.
-        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
-        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
-      }
 
-      // Step 2: Call the backend to mint the token (server-side)
-      setStatus("⏳ 2/2: Calling secure backend to mint...");
+    let client;
+    try {
+      // --- 1. Associate Token (Hedera SDK) ---
+      setStatus("⏳ 1/3: Associating token with your account...");
+
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error("Private key not found in localStorage.");
+
+      const userPrivateKey = PrivateKey.fromStringED25519(storedKey);
+      const userAccountId = AccountId.fromString(accountId);
+
+      client = Client.forTestnet();
+      client.setOperator(userAccountId, userPrivateKey);
+
+      const associateTx = new TokenAssociateTransaction()
+        .setAccountId(userAccountId)
+        .setTokenIds([assetTokenId])
+        .freezeWith(client);
+
+      const associateSign = await associateTx.sign(userPrivateKey);
+      const associateSubmit = await associateSign.execute(client);
+      const associateRx = await associateSubmit.getReceipt(client);
+
+      if (associateRx.status.toString() !== 'SUCCESS') {
+        throw new Error(`Token Association Failed: ${associateRx.status.toString()}`);
+      }
+      console.log(`- NFT association with account ${accountId}: ${associateRx.status.toString()}`);
+      setStatus("✅ 1/3: Association successful!");
+
+
+      // --- 2. Call Backend to Mint (Server-Side Logic) ---
+      setStatus("⏳ 2/3: Calling secure backend to mint...");
       const response = await fetch(mintRwaViaUssdUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,63 +158,120 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const mintedTokenId = data.tokenId;
-      setTokenId(mintedTokenId);
+      // --- 3. Update State ---
+      setStatus("⏳ 3/3: Updating state with new NFT info...");
+      const { tokenId: newTokenId, serialNumber: newSerialNumber } = data;
+      setTokenId(newTokenId); // This is the 0.0.X ID of the token collection
+      setSerialNumber(newSerialNumber); // This is the unique ID of the NFT
       setFlowState("MINTED");
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+
+      localStorage.setItem('integro-token-id', newTokenId);
+      localStorage.setItem('integro-serial-number', newSerialNumber);
+      localStorage.setItem('integro-flow-state', "MINTED");
+
+      setStatus(`✅ NFT Minted! Serial Number: ${newSerialNumber}`);
 
     } catch (error) {
       console.error("Minting failed:", error);
-      setStatus(`❌ Minting Failed: ${error.message}`);
+      // Handle the case where the token is already associated
+      if (error.message && error.message.includes("TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT")) {
+        setStatus("⚠️ Token already associated. Proceeding...");
+        // You might want to call the minting part of the function again here
+      } else {
+        setStatus(`❌ Minting Failed: ${error.message}`);
+      }
     } finally {
+      if (client) {
+        client.close();
+      }
       setIsTransactionLoading(false);
     }
   };
 
   const handleList = async () => {
-    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    if (!signer || !tokenId || !serialNumber) return alert("Please mint an NFT first.");
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
+
+    let client;
     try {
-      const userAssetTokenContract = getAssetTokenContract(signer);
-      const userEscrowContract = getEscrowContract(signer);
+        // --- 1. Approve Escrow Contract (Hedera SDK) ---
+        setStatus("⏳ 1/2: Approving Escrow contract via HTS...");
 
-      setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
-      await approveTx.wait();
-      setStatus("✅ Approval successful!");
+        const storedKey = localStorage.getItem('integro-private-key');
+        if (!storedKey) throw new Error("Private key not found in localStorage.");
+        const userPrivateKey = PrivateKey.fromStringED25519(storedKey);
+        const userAccountId = AccountId.fromString(accountId);
 
-      setStatus("⏳ Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
-      await listTx.wait();
+        client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
-      setFlowState("LISTED");
-      setStatus(`✅ NFT Listed for 50 HBAR!`);
+        const nftId = new NftId(AccountId.fromString(tokenId), serialNumber);
+
+        const approveTx = new AccountAllowanceApproveTransaction()
+            .approveTokenNftAllowance(nftId, userAccountId, escrowContractAccountId)
+            .freezeWith(client);
+
+        const approveSign = await approveTx.sign(userPrivateKey);
+        const approveSubmit = await approveSign.execute(client);
+        const approveRx = await approveSubmit.getReceipt(client);
+
+        if (approveRx.status.toString() !== 'SUCCESS') {
+            throw new Error(`HTS Approval Failed: ${approveRx.status.toString()}`);
+        }
+        console.log(`- HTS approval for Escrow contract ${escrowContractAccountId}: ${approveRx.status.toString()}`);
+        setStatus("✅ 1/2: HTS Approval successful!");
+
+
+        // --- 2. List on Marketplace (ethers.js) ---
+        setStatus("⏳ 2/2: Listing on EVM marketplace...");
+        const userEscrowContract = getEscrowContractWithSigner(signer);
+        const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
+        const tokenSolidityAddress = AccountId.fromString(tokenId).toSolidityAddress();
+
+        const listTx = await userEscrowContract.listAsset(tokenSolidityAddress, serialNumber, priceInTinybars);
+        await listTx.wait();
+
+        setFlowState("LISTED");
+        localStorage.setItem('integro-flow-state', "LISTED");
+        setStatus(`✅ NFT Listed for 50 HBAR!`);
 
     } catch (error) {
-      console.error("Listing failed:", error);
-      setStatus(`❌ Listing Failed: ${error.message}`);
+        console.error("Listing failed:", error);
+        setStatus(`❌ Listing Failed: ${error.message}`);
     } finally {
-      setIsTransactionLoading(false);
+        if (client) {
+            client.close();
+        }
+        setIsTransactionLoading(false);
     }
   };
 
   const handleBuy = async () => {
-    if (!signer || !tokenId) return alert("No item listed for sale.");
+    if (!signer || !tokenId || !serialNumber || flowState !== 'LISTED') {
+      alert("Prerequisites not met. Ensure an NFT is listed for sale.");
+      return;
+    }
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const priceInWeibars = ethers.parseEther("50");
+      const userEscrowContract = getEscrowContractWithSigner(signer);
+      const tokenSolidityAddress = AccountId.fromString(tokenId).toSolidityAddress();
+      const priceInWei = ethers.parseEther("50");
 
-      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
-        value: priceInWeibars,
-        gasLimit: 1000000
-      });
-      await fundTx.wait();
+      console.log(`Funding Escrow with Token Address: ${tokenSolidityAddress}, Serial: ${serialNumber}`);
+
+      const txResponse = await userEscrowContract.fundEscrow(
+        tokenSolidityAddress,
+        serialNumber,
+        {
+          value: priceInWei,
+          gasLimit: 1000000
+        }
+      );
+      await txResponse.wait();
 
       setFlowState("FUNDED");
+      localStorage.setItem('integro-flow-state', "FUNDED");
       setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
 
     } catch (error) {
@@ -195,20 +283,23 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    if (!signer || !tokenId || !serialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
-        gasLimit: 1000000
+      const userEscrowContract = getEscrowContractWithSigner(signer);
+      const tokenSolidityAddress = AccountId.fromString(tokenId).toSolidityAddress();
+
+      const confirmTx = await userEscrowContract.confirmDelivery(tokenSolidityAddress, serialNumber, {
+        gasLimit: 1000000,
       });
       await confirmTx.wait();
 
       setFlowState("SOLD");
+      localStorage.setItem('integro-flow-state', "SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
 
-    } catch (error)      {
+    } catch (error) {
       console.error("Confirmation failed:", error);
       setStatus(`❌ Confirmation Failed: ${error.message}`);
     } finally {
@@ -247,7 +338,6 @@ function App() {
           4. Confirm Delivery
         </button>
       </div>
-
       {flowState === 'SOLD' && (
         <div className="success-message">
           🎉 Congratulations! The entire flow is complete.

@@ -12,9 +12,9 @@ describe("Escrow Contract", function () {
     assetToken = await AssetToken.deploy();
     await assetToken.waitForDeployment();
 
-    // Deploy the Escrow contract with the AssetToken address
+    // Deploy the Escrow contract
     Escrow = await ethers.getContractFactory("Escrow");
-    escrow = await Escrow.deploy(assetToken.target);
+    escrow = await Escrow.deploy();
     await escrow.waitForDeployment();
 
     // Mint a token for the seller
@@ -26,9 +26,10 @@ describe("Escrow Contract", function () {
   it("Should list an asset correctly", async function () {
     const price = BigInt(50 * 1e8); // 50 HBAR in tinybars
 
-    await escrow.connect(seller).listAsset(0, price);
+    await escrow.connect(seller).listAsset(assetToken.target, 0, price);
 
-    const listing = await escrow.listings(0);
+    const listingKey = await escrow.getListingKey(assetToken.target, 0);
+    const listing = await escrow.listings(listingKey);
     expect(listing.seller).to.equal(seller.address);
     expect(listing.price).to.equal(price);
     expect(listing.state).to.equal(0); // 0 corresponds to LISTED

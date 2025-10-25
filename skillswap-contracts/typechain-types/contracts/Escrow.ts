@@ -26,10 +26,10 @@ import type {
 export interface EscrowInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "assetTokenAddress"
       | "cancelListing"
       | "confirmDelivery"
       | "fundEscrow"
+      | "getListingKey"
       | "listAsset"
       | "listings"
       | "refundBuyer"
@@ -44,38 +44,31 @@ export interface EscrowInterface extends Interface {
   ): EventFragment;
 
   encodeFunctionData(
-    functionFragment: "assetTokenAddress",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "cancelListing",
-    values: [BigNumberish]
+    values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "confirmDelivery",
-    values: [BigNumberish]
+    values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "fundEscrow",
-    values: [BigNumberish]
+    values: [AddressLike, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getListingKey",
+    values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "listAsset",
-    values: [BigNumberish, BigNumberish]
+    values: [AddressLike, BigNumberish, BigNumberish]
   ): string;
-  encodeFunctionData(
-    functionFragment: "listings",
-    values: [BigNumberish]
-  ): string;
+  encodeFunctionData(functionFragment: "listings", values: [BytesLike]): string;
   encodeFunctionData(
     functionFragment: "refundBuyer",
-    values: [BigNumberish]
+    values: [AddressLike, BigNumberish]
   ): string;
 
-  decodeFunctionResult(
-    functionFragment: "assetTokenAddress",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "cancelListing",
     data: BytesLike
@@ -85,6 +78,10 @@ export interface EscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "fundEscrow", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "getListingKey",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "listAsset", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "listings", data: BytesLike): Result;
   decodeFunctionResult(
@@ -95,12 +92,19 @@ export interface EscrowInterface extends Interface {
 
 export namespace AssetListedEvent {
   export type InputTuple = [
+    assetToken: AddressLike,
     tokenId: BigNumberish,
     seller: AddressLike,
     price: BigNumberish
   ];
-  export type OutputTuple = [tokenId: bigint, seller: string, price: bigint];
+  export type OutputTuple = [
+    assetToken: string,
+    tokenId: bigint,
+    seller: string,
+    price: bigint
+  ];
   export interface OutputObject {
+    assetToken: string;
     tokenId: bigint;
     seller: string;
     price: bigint;
@@ -112,9 +116,18 @@ export namespace AssetListedEvent {
 }
 
 export namespace EscrowFundedEvent {
-  export type InputTuple = [tokenId: BigNumberish, buyer: AddressLike];
-  export type OutputTuple = [tokenId: bigint, buyer: string];
+  export type InputTuple = [
+    assetToken: AddressLike,
+    tokenId: BigNumberish,
+    buyer: AddressLike
+  ];
+  export type OutputTuple = [
+    assetToken: string,
+    tokenId: bigint,
+    buyer: string
+  ];
   export interface OutputObject {
+    assetToken: string;
     tokenId: bigint;
     buyer: string;
   }
@@ -125,9 +138,10 @@ export namespace EscrowFundedEvent {
 }
 
 export namespace ListingCanceledEvent {
-  export type InputTuple = [tokenId: BigNumberish];
-  export type OutputTuple = [tokenId: bigint];
+  export type InputTuple = [assetToken: AddressLike, tokenId: BigNumberish];
+  export type OutputTuple = [assetToken: string, tokenId: bigint];
   export interface OutputObject {
+    assetToken: string;
     tokenId: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
@@ -138,12 +152,19 @@ export namespace ListingCanceledEvent {
 
 export namespace SaleCompletedEvent {
   export type InputTuple = [
+    assetToken: AddressLike,
     tokenId: BigNumberish,
     seller: AddressLike,
     buyer: AddressLike
   ];
-  export type OutputTuple = [tokenId: bigint, seller: string, buyer: string];
+  export type OutputTuple = [
+    assetToken: string,
+    tokenId: bigint,
+    seller: string,
+    buyer: string
+  ];
   export interface OutputObject {
+    assetToken: string;
     tokenId: bigint;
     seller: string;
     buyer: string;
@@ -197,30 +218,42 @@ export interface Escrow extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  assetTokenAddress: TypedContractMethod<[], [string], "view">;
-
   cancelListing: TypedContractMethod<
-    [tokenId: BigNumberish],
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
 
   confirmDelivery: TypedContractMethod<
-    [tokenId: BigNumberish],
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
 
-  fundEscrow: TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
+  fundEscrow: TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [void],
+    "payable"
+  >;
+
+  getListingKey: TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [string],
+    "view"
+  >;
 
   listAsset: TypedContractMethod<
-    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
+    [
+      assetTokenAddress: AddressLike,
+      tokenId: BigNumberish,
+      priceInTinybars: BigNumberish
+    ],
     [void],
     "nonpayable"
   >;
 
   listings: TypedContractMethod<
-    [arg0: BigNumberish],
+    [arg0: BytesLike],
     [
       [string, string, bigint, bigint] & {
         seller: string;
@@ -233,7 +266,7 @@ export interface Escrow extends BaseContract {
   >;
 
   refundBuyer: TypedContractMethod<
-    [tokenId: BigNumberish],
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -243,28 +276,48 @@ export interface Escrow extends BaseContract {
   ): T;
 
   getFunction(
-    nameOrSignature: "assetTokenAddress"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
     nameOrSignature: "cancelListing"
-  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "confirmDelivery"
-  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "fundEscrow"
-  ): TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
+  ): TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [void],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "getListingKey"
+  ): TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [string],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "listAsset"
   ): TypedContractMethod<
-    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
+    [
+      assetTokenAddress: AddressLike,
+      tokenId: BigNumberish,
+      priceInTinybars: BigNumberish
+    ],
     [void],
     "nonpayable"
   >;
   getFunction(
     nameOrSignature: "listings"
   ): TypedContractMethod<
-    [arg0: BigNumberish],
+    [arg0: BytesLike],
     [
       [string, string, bigint, bigint] & {
         seller: string;
@@ -277,7 +330,11 @@ export interface Escrow extends BaseContract {
   >;
   getFunction(
     nameOrSignature: "refundBuyer"
-  ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<
+    [assetTokenAddress: AddressLike, tokenId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   getEvent(
     key: "AssetListed"
@@ -309,7 +366,7 @@ export interface Escrow extends BaseContract {
   >;
 
   filters: {
-    "AssetListed(uint256,address,uint256)": TypedContractEvent<
+    "AssetListed(address,uint256,address,uint256)": TypedContractEvent<
       AssetListedEvent.InputTuple,
       AssetListedEvent.OutputTuple,
       AssetListedEvent.OutputObject
@@ -320,7 +377,7 @@ export interface Escrow extends BaseContract {
       AssetListedEvent.OutputObject
     >;
 
-    "EscrowFunded(uint256,address)": TypedContractEvent<
+    "EscrowFunded(address,uint256,address)": TypedContractEvent<
       EscrowFundedEvent.InputTuple,
       EscrowFundedEvent.OutputTuple,
       EscrowFundedEvent.OutputObject
@@ -331,7 +388,7 @@ export interface Escrow extends BaseContract {
       EscrowFundedEvent.OutputObject
     >;
 
-    "ListingCanceled(uint256)": TypedContractEvent<
+    "ListingCanceled(address,uint256)": TypedContractEvent<
       ListingCanceledEvent.InputTuple,
       ListingCanceledEvent.OutputTuple,
       ListingCanceledEvent.OutputObject
@@ -342,7 +399,7 @@ export interface Escrow extends BaseContract {
       ListingCanceledEvent.OutputObject
     >;
 
-    "SaleCompleted(uint256,address,address)": TypedContractEvent<
+    "SaleCompleted(address,uint256,address,address)": TypedContractEvent<
       SaleCompletedEvent.InputTuple,
       SaleCompletedEvent.OutputTuple,
       SaleCompletedEvent.OutputObject
