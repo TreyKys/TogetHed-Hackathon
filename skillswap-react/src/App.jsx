@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk';
+import { Client, PrivateKey, AccountId, TokenAssociateTransaction } from '@hashgraph/sdk';
 import {
   getAssetTokenContract,
   getEscrowContract,
   escrowContractAddress,
-  getProvider
+  getProvider,
+  assetTokenId
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -20,6 +21,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
+  const [nftSerialNumber, setNftSerialNumber] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
 
@@ -89,33 +91,66 @@ function App() {
   };
 
   const handleMint = async () => {
-    if (!signer || !accountId) return alert("Signer not initialized.");
+    // 1. Load User Credentials
+    const storedKey = localStorage.getItem('integro-private-key');
+    const storedAccountId = localStorage.getItem('integro-account-id');
+
+    if (!storedKey || !storedAccountId) {
+      alert("Vault not found. Please create a vault first.");
+      return;
+    }
+    if (assetTokenId !== "0.0.7130964") {
+        alert(`CRITICAL: Incorrect Token ID detected: ${assetTokenId}`);
+        return;
+    }
+
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
+
+    let userClient;
+
     try {
-      // Step 1: Associate the token with the user's account (client-side)
-      setStatus("⏳ 1/2: Associating token with your account...");
-      try {
-        const userAssetTokenContract = getAssetTokenContract(signer);
-        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-        await assocTx.wait();
+      // 2. SDK Token Association
+      setStatus("⏳ 1/3: Preparing to associate token with your account...");
+
+      // NOTE: Stored key has '0x' prefix from ethers, SDK needs raw.
+      const userPrivateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
+      const userAccountId = AccountId.fromString(storedAccountId);
+
+      userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      setStatus("⏳ 2/3: Associating token (requires your signature)...");
+      const associateTx = await new TokenAssociateTransaction()
+        .setAccountId(userAccountId)
+        .setTokenIds([assetTokenId])
+        .freezeWith(userClient);
+
+      const associateSign = await associateTx.sign(userPrivateKey);
+      const associateSubmit = await associateSign.execute(userClient);
+      const associateReceipt = await associateSubmit.getReceipt(userClient);
+
+      if (associateReceipt.status.toString() !== 'SUCCESS') {
+        // Handle cases like TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT gracefully
+        if (associateReceipt.status.toString() === 'TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT') {
+            console.log("Token already associated, proceeding to mint.");
+            setStatus("✅ Token already associated.");
+        } else {
+            console.error("Full Association Receipt:", associateReceipt);
+            throw new Error(`Token association failed with status: ${associateReceipt.status.toString()}`);
+        }
+      } else {
         setStatus("✅ Association successful!");
-      } catch (e) {
-        // This is a workaround. The contract reverts with a generic "HTS association failed"
-        // for multiple reasons, including if the token is already associated.
-        // We'll optimistically assume the association is already in place and proceed.
-        // The backend mint call will fail if the association is truly missing.
-        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
-        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
+        console.log("Association successful. Receipt:", associateReceipt);
       }
 
-      // Step 2: Call the backend to mint the token (server-side)
-      setStatus("⏳ 2/2: Calling secure backend to mint...");
+
+      // 3. Backend Mint Request
+      setStatus("⏳ 3/3: Calling secure backend to mint...");
       const response = await fetch(mintRwaViaUssdUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accountId: accountId,
+          accountId: storedAccountId,
           assetType: "Yam Harvest Future",
           quality: "Grade A",
           location: "Ikorodu, Nigeria"
@@ -127,21 +162,32 @@ function App() {
         throw new Error(data.error || 'Backend minting request failed.');
       }
 
-      const mintedTokenId = data.tokenId;
-      setTokenId(mintedTokenId);
-      setFlowState("MINTED");
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+      // 4. Handle Backend Response
+      console.log("Backend Response:", data);
+      const { tokenId: receivedTokenId, serialNumber } = data;
+
+      if (receivedTokenId !== assetTokenId) {
+          console.warn(`Warning: Token ID from backend (${receivedTokenId}) does not match expected ID (${assetTokenId}).`);
+      }
+
+      setTokenId(receivedTokenId); // Store the collection ID
+      setNftSerialNumber(serialNumber); // Store the unique serial number
+      setFlowState('MINTED');
+      setStatus(`✅ NFT Minted! Serial Number: ${serialNumber}`);
 
     } catch (error) {
       console.error("Minting failed:", error);
       setStatus(`❌ Minting Failed: ${error.message}`);
     } finally {
       setIsTransactionLoading(false);
+      if (userClient) {
+        userClient.close();
+      }
     }
   };
 
   const handleList = async () => {
-    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    if (!signer || !nftSerialNumber) return alert("Please mint an NFT first.");
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
     try {
@@ -149,13 +195,13 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
 
       setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
+      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, nftSerialNumber);
       await approveTx.wait();
       setStatus("✅ Approval successful!");
 
       setStatus("⏳ Listing on marketplace...");
       const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
+      const listTx = await userEscrowContract.listAsset(nftSerialNumber, priceInTinybars);
       await listTx.wait();
 
       setFlowState("LISTED");
