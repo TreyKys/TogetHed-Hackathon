@@ -127,20 +127,25 @@ function App() {
 
       const associateSign = await associateTx.sign(userPrivateKey);
       const associateSubmit = await associateSign.execute(userClient);
-      const associateReceipt = await associateSubmit.getReceipt(userClient);
 
-      if (associateReceipt.status.toString() !== 'SUCCESS') {
-        // Handle cases like TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT gracefully
-        if (associateReceipt.status.toString() === 'TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT') {
-            console.log("Token already associated, proceeding to mint.");
-            setStatus("✅ Token already associated.");
+      try {
+        const associateReceipt = await associateSubmit.getReceipt(userClient);
+        if (associateReceipt.status.toString() === 'SUCCESS') {
+          setStatus("✅ Association successful! Proceeding to mint...");
+          console.log("Token Association Successful!");
         } else {
-            console.error("Full Association Receipt:", associateReceipt);
-            throw new Error(`Token association failed with status: ${associateReceipt.status.toString()}`);
+          // This path may not be hit if getReceipt throws, but is a fallback.
+          console.error("ASSOCIATION FAILED:", associateReceipt);
+          throw new Error(`Token Association Failed with status: ${associateReceipt.status.toString()}`);
         }
-      } else {
-        setStatus("✅ Association successful!");
-        console.log("Association successful. Receipt:", associateReceipt);
+      } catch (err) {
+        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
+          setStatus("✅ Token already associated. Proceeding to mint...");
+          console.log("Token already associated, proceeding to mint.");
+        } else {
+          // Re-throw other errors
+          throw err;
+        }
       }
 
 
