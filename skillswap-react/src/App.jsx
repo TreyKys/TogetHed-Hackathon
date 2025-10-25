@@ -200,10 +200,6 @@ function App() {
   };
 
  const handleList = async () => {
-    // 1. Prerequisites Check
-    const rawPrivateKey = localStorage.getItem('integro-private-key');
-    if (!signer || !accountId || !rawPrivateKey || !assetTokenIdState || !nftSerialNumber || flowState !== 'MINTED') {
-      return;
     }
 
     setIsTransactionLoading(true);
