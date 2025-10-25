@@ -3,3 +3,5 @@
 /* eslint-disable */
 export { AssetToken__factory } from "./AssetToken__factory";
 export { Escrow__factory } from "./Escrow__factory";
+export { IHRC721__factory } from "./IHRC721__factory";
+export { MockHRC721__factory } from "./MockHRC721__factory";

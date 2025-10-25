@@ -73,6 +73,14 @@ declare module "hardhat/types/runtime" {
       name: "Escrow",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Escrow__factory>;
+    getContractFactory(
+      name: "IHRC721",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IHRC721__factory>;
+    getContractFactory(
+      name: "MockHRC721",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockHRC721__factory>;
 
     getContractAt(
       name: "IHederaTokenService",
@@ -149,6 +157,16 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.Escrow>;
+    getContractAt(
+      name: "IHRC721",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IHRC721>;
+    getContractAt(
+      name: "MockHRC721",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockHRC721>;
 
     deployContract(
       name: "IHederaTokenService",
@@ -210,6 +228,14 @@ declare module "hardhat/types/runtime" {
       name: "Escrow",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Escrow>;
+    deployContract(
+      name: "IHRC721",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IHRC721>;
+    deployContract(
+      name: "MockHRC721",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockHRC721>;
 
     deployContract(
       name: "IHederaTokenService",
@@ -286,6 +312,16 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Escrow>;
+    deployContract(
+      name: "IHRC721",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IHRC721>;
+    deployContract(
+      name: "MockHRC721",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockHRC721>;
 
     // default types
     getContractFactory(

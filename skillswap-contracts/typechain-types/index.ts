@@ -38,3 +38,7 @@ export type { AssetToken } from "./contracts/AssetToken";
 export { AssetToken__factory } from "./factories/contracts/AssetToken__factory";
 export type { Escrow } from "./contracts/Escrow";
 export { Escrow__factory } from "./factories/contracts/Escrow__factory";
+export type { IHRC721 } from "./contracts/IHRC721";
+export { IHRC721__factory } from "./factories/contracts/IHRC721__factory";
+export type { MockHRC721 } from "./contracts/MockHRC721";
+export { MockHRC721__factory } from "./factories/contracts/MockHRC721__factory";

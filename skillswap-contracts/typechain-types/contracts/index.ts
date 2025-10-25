@@ -3,3 +3,5 @@
 /* eslint-disable */
 export type { AssetToken } from "./AssetToken";
 export type { Escrow } from "./Escrow";
+export type { IHRC721 } from "./IHRC721";
+export type { MockHRC721 } from "./MockHRC721";

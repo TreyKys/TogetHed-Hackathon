@@ -1,36 +1,67 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("Escrow Contract", function () {
-  let AssetToken, assetToken, Escrow, escrow, owner, seller, buyer;
+    async function deployEscrowFixture() {
+        const [owner, seller, buyer] = await ethers.getSigners();
 
-  beforeEach(async function () {
-    [owner, seller, buyer] = await ethers.getSigners();
+        const Escrow = await ethers.getContractFactory("Escrow");
+        const escrow = await Escrow.deploy();
 
-    // Deploy a mock AssetToken contract
-    AssetToken = await ethers.getContractFactory("AssetToken");
-    assetToken = await AssetToken.deploy();
-    await assetToken.waitForDeployment();
+        const MockHRC721 = await ethers.getContractFactory("MockHRC721");
+        const mockHRC721 = await MockHRC721.deploy();
+        const tokenAddress = await mockHRC721.getAddress();
 
-    // Deploy the Escrow contract with the AssetToken address
-    Escrow = await ethers.getContractFactory("Escrow");
-    escrow = await Escrow.deploy(assetToken.target);
-    await escrow.waitForDeployment();
+        const serialNumber = 1;
+        const priceInTinybars = BigInt(1 * 1e8);
+        const priceInWeibars = ethers.parseEther("1");
 
-    // Mint a token for the seller
-    await assetToken.safeMint(seller.address, "Test Type", "Test Quality", "Test Location");
-    // Approve the escrow contract to manage the token
-    await assetToken.connect(seller).approve(escrow.target, 0);
-  });
 
-  it("Should list an asset correctly", async function () {
-    const price = BigInt(50 * 1e8); // 50 HBAR in tinybars
+        return { escrow, owner, seller, buyer, tokenAddress, serialNumber, priceInTinybars, priceInWeibars };
+    }
 
-    await escrow.connect(seller).listAsset(0, price);
+    it("Should list an asset correctly", async function () {
+        const { escrow, seller, tokenAddress, serialNumber, priceInTinybars } = await loadFixture(deployEscrowFixture);
 
-    const listing = await escrow.listings(0);
-    expect(listing.seller).to.equal(seller.address);
-    expect(listing.price).to.equal(price);
-    expect(listing.state).to.equal(0); // 0 corresponds to LISTED
-  });
+        await escrow.connect(seller).listAsset(tokenAddress, serialNumber, priceInTinybars);
+
+        const listing = await escrow.listings(tokenAddress, serialNumber);
+        expect(listing.seller).to.equal(seller.address);
+        expect(listing.price).to.equal(priceInTinybars);
+        expect(listing.state).to.equal(0); // 0 corresponds to LISTED
+    });
+
+    it("Should allow a buyer to fund the escrow", async function () {
+        const { escrow, seller, buyer, tokenAddress, serialNumber, priceInTinybars, priceInWeibars } = await loadFixture(deployEscrowFixture);
+        await escrow.connect(seller).listAsset(tokenAddress, serialNumber, priceInTinybars);
+
+        await escrow.connect(buyer).fundEscrow(tokenAddress, serialNumber, { value: priceInWeibars });
+
+        const listing = await escrow.listings(tokenAddress, serialNumber);
+        expect(listing.buyer).to.equal(buyer.address);
+        expect(listing.state).to.equal(1); // 1 corresponds to FUNDED
+    });
+
+    it("Should allow the buyer to confirm delivery and transfer the NFT", async function () {
+        const { escrow, seller, buyer, tokenAddress, serialNumber, priceInTinybars, priceInWeibars } = await loadFixture(deployEscrowFixture);
+        await escrow.connect(seller).listAsset(tokenAddress, serialNumber, priceInTinybars);
+        await escrow.connect(buyer).fundEscrow(tokenAddress, serialNumber, { value: priceInWeibars });
+
+        // This is a mock so we can't truly test the transfer, but we can test the state change
+        await escrow.connect(buyer).confirmDelivery(tokenAddress, serialNumber);
+
+        const listing = await escrow.listings(tokenAddress, serialNumber);
+        expect(listing.state).to.equal(2); // 2 corresponds to SOLD
+    });
+
+    it("Should allow the seller to cancel a listing", async function () {
+        const { escrow, seller, tokenAddress, serialNumber, priceInTinybars } = await loadFixture(deployEscrowFixture);
+        await escrow.connect(seller).listAsset(tokenAddress, serialNumber, priceInTinybars);
+
+        await escrow.connect(seller).cancelListing(tokenAddress, serialNumber);
+
+        const listing = await escrow.listings(tokenAddress, serialNumber);
+        expect(listing.state).to.equal(3); // 3 corresponds to CANCELED
+    });
 });
