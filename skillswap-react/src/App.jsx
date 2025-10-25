@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { Client, PrivateKey, AccountId, TokenAssociateTransaction } from '@hashgraph/sdk';
 import {
-  getAssetTokenContract,
+  PrivateKey,
+  AccountId,
+  Client,
+  TokenAssociateTransaction,
+  AccountAllowanceApproveTransaction,
+  TokenId,
+  NftId
+} from '@hashgraph/sdk';
+import {
   getEscrowContract,
   escrowContractAddress,
-  getProvider,
-  assetTokenId
+  escrowContractAccountId,
+  assetTokenId,
+  getProvider
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -20,7 +28,7 @@ function App() {
   const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
-  const [tokenId, setTokenId] = useState(null);
+  const [assetTokenIdState, setAssetTokenIdState] = useState(null);
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
@@ -175,7 +183,7 @@ function App() {
           console.warn(`Warning: Token ID from backend (${receivedTokenId}) does not match expected ID (${assetTokenId}).`);
       }
 
-      setTokenId(receivedTokenId); // Store the collection ID
+      setAssetTokenIdState(receivedTokenId); // Store the collection ID
       setNftSerialNumber(serialNumber); // Store the unique serial number
       setFlowState('MINTED');
       setStatus(`✅ NFT Minted! Serial Number: ${serialNumber}`);
@@ -191,26 +199,66 @@ function App() {
     }
   };
 
-  const handleList = async () => {
-    if (!signer || !nftSerialNumber) return alert("Please mint an NFT first.");
+ const handleList = async () => {
+    // 1. Prerequisites Check
+    const rawPrivateKey = localStorage.getItem('integro-private-key');
+    if (!signer || !accountId || !rawPrivateKey || !assetTokenIdState || !nftSerialNumber || flowState !== 'MINTED') {
+      alert("Prerequisites not met. Ensure a vault is created and an NFT has been minted.");
+      return;
+    }
+
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
+
     try {
-      const userAssetTokenContract = getAssetTokenContract(signer);
-      const userEscrowContract = getEscrowContract(signer);
+      // 2. SDK NFT Approval
+      console.log("Step 1: SDK NFT Approval");
+      setStatus("⏳ 1/3: Creating SDK client...");
 
-      setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, nftSerialNumber);
-      await approveTx.wait();
-      setStatus("✅ Approval successful!");
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey.slice(2));
+      const userAccountId = AccountId.fromString(accountId);
 
-      setStatus("⏳ Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(nftSerialNumber, priceInTinybars);
-      await listTx.wait();
+      const userClient = Client.forTestnet();
+      userClient.setOperator(userAccountId, userPrivateKey);
 
+      setStatus("⏳ 2/3: Building & signing native approval...");
+      const allowanceTx = new AccountAllowanceApproveTransaction()
+        .approveTokenNftAllowance(new NftId(TokenId.fromString(assetTokenIdState), nftSerialNumber), accountId, escrowContractAccountId);
+
+      const frozenTx = await allowanceTx.freezeWith(userClient);
+      const signedTx = await frozenTx.sign(userPrivateKey);
+      const txResponse = await signedTx.execute(userClient);
+      const receipt = await txResponse.getReceipt(userClient);
+
+      if (receipt.status.toString() !== 'SUCCESS') {
+        console.error("Receipt:", JSON.stringify(receipt, null, 2));
+        throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
+      }
+      console.log("SDK Approval successful!");
+      setStatus("✅ SDK Approval Successful!");
+
+      // 3. Prepare Solidity Call Parameters
+      console.log("Step 2: Preparing EVM call parameters");
+      setStatus("⏳ 3/3: Preparing to list on marketplace...");
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+      const serialBigInt = BigInt(nftSerialNumber);
+      const priceInTinybars = BigInt(50 * 1e8);
+
+      // 4. Call listAsset (Ethers.js)
+      console.log("Step 3: Calling listAsset on Escrow contract");
+      const escrowContract = getEscrowContract(signer);
+      const listTxResponse = await escrowContract.listAsset(
+        `0x${tokenSolidityAddress}`,
+        serialBigInt,
+        priceInTinybars,
+        { gasLimit: 1000000 }
+      );
+      await listTxResponse.wait();
+
+      // 5. Update State
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
+      console.log("Listing successful!");
 
     } catch (error) {
       console.error("Listing failed:", error);
@@ -221,17 +269,23 @@ function App() {
   };
 
   const handleBuy = async () => {
-    if (!signer || !tokenId) return alert("No item listed for sale.");
+    if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
       const userEscrowContract = getEscrowContract(signer);
       const priceInWeibars = ethers.parseEther("50");
 
-      const fundTx = await userEscrowContract.fundEscrow(tokenId, {
-        value: priceInWeibars,
-        gasLimit: 1000000
-      });
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+
+      const fundTx = await userEscrowContract.fundEscrow(
+        `0x${tokenSolidityAddress}`,
+        nftSerialNumber,
+        {
+          value: priceInWeibars,
+          gasLimit: 1000000
+        }
+      );
       await fundTx.wait();
 
       setFlowState("FUNDED");
@@ -246,14 +300,19 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    if (!signer || !nftSerialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
       const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
-        gasLimit: 1000000
-      });
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+      const confirmTx = await userEscrowContract.confirmDelivery(
+        `0x${tokenSolidityAddress}`,
+        nftSerialNumber,
+        {
+          gasLimit: 1000000
+        }
+      );
       await confirmTx.wait();
 
       setFlowState("SOLD");
