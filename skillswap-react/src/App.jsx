@@ -341,7 +341,7 @@ function App() {
   const renderLoggedInUI = () => (
     <div className="card">
       <h3>Golden Path Walkthrough</h3>
-      <p className="flow-status">Current State: <strong>{flowState}</strong> {tokenId && `(Token ID: ${tokenId})`}</p>
+      <p className="flow-status">Current State: <strong>{flowState}</strong> {assetTokenIdState && `(Token ID: ${assetTokenIdState})`}</p>
 
       <div className="button-group">
         <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
