@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk';
+import { PrivateKey, AccountId } from '@hashgraph/sdk';
 import {
   getAssetTokenContract,
   getEscrowContract,
@@ -20,6 +20,8 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [tokenId, setTokenId] = useState(null);
+  const [assetTokenId, setAssetTokenId] = useState(null);
+  const [nftSerialNumber, setNftSerialNumber] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
 
@@ -28,6 +30,9 @@ function App() {
     const loadWallet = async () => {
       const storedKey = localStorage.getItem('integro-private-key');
       const storedAccountId = localStorage.getItem('integro-account-id');
+      const storedAssetTokenId = localStorage.getItem('integro-asset-token-id');
+      const storedNftSerialNumber = localStorage.getItem('integro-nft-serial-number');
+
       if (storedKey && storedAccountId) {
         setStatus("Restoring your secure vault...");
         const provider = getProvider();
@@ -35,6 +40,13 @@ function App() {
         setSigner(loadedSigner);
         setAccountId(storedAccountId);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
+      }
+
+      if (storedAssetTokenId && storedNftSerialNumber) {
+        setAssetTokenId(storedAssetTokenId);
+        setNftSerialNumber(storedNftSerialNumber);
+        // We can't immediately determine the flow state, but we can set the token info
+        // The user will see buttons enabled based on the last known state from their actions
       }
     };
     loadWallet();
@@ -128,9 +140,16 @@ function App() {
       }
 
       const mintedTokenId = data.tokenId;
-      setTokenId(mintedTokenId);
+      const returnedAssetTokenId = data.assetTokenId;
+
+      localStorage.setItem('integro-asset-token-id', returnedAssetTokenId);
+      localStorage.setItem('integro-nft-serial-number', mintedTokenId);
+
+      setTokenId(mintedTokenId); // Note: tokenId from state is the serial number
+      setAssetTokenId(returnedAssetTokenId);
+      setNftSerialNumber(mintedTokenId);
       setFlowState("MINTED");
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+      setStatus(`✅ NFT Minted! Token ID: ${returnedAssetTokenId} / Serial: ${mintedTokenId}`);
 
     } catch (error) {
       console.error("Minting failed:", error);
@@ -195,14 +214,28 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !tokenId) return alert("No funded escrow to confirm.");
+    if (!signer || !assetTokenId || !nftSerialNumber || flowState !== 'FUNDED') {
+      alert("Prerequisites not met. Need signer, asset token ID, NFT serial, and funded state.");
+      return;
+    }
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
       const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(tokenId, {
-        gasLimit: 1000000
-      });
+
+      // Convert Hedera 0.0.X ID to Solidity address
+      const tokenSolidityAddress = AccountId.fromString(assetTokenId).toSolidityAddress();
+      const serialBigInt = BigInt(nftSerialNumber);
+
+      console.log(`Confirming with Token Address: 0x${tokenSolidityAddress} and Serial: ${serialBigInt}`);
+
+      const confirmTx = await userEscrowContract.confirmDelivery(
+        `0x${tokenSolidityAddress}`,
+        serialBigInt,
+        {
+          gasLimit: 1500000
+        }
+      );
       await confirmTx.wait();
 
       setFlowState("SOLD");
