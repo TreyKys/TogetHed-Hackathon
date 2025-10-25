@@ -200,7 +200,6 @@ function App() {
   };
 
  const handleList = async () => {
-    }
 
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
