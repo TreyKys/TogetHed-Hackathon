@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
-import { PrivateKey } from '@hashgraph/sdk';
 import {
-  getAssetTokenContract,
+  PrivateKey,
+  AccountId,
+  Client,
+  AccountAllowanceApproveTransaction,
+  TokenId,
+  NftId
+} from '@hashgraph/sdk';
+import {
   getEscrowContract,
   escrowContractAddress,
+  escrowContractAccountId,
+  assetTokenId,
   getProvider
 } from './hedera.js';
 
@@ -40,14 +48,17 @@ function App() {
     loadWallet();
   }, []);
 
+  const [nftSerialNumber, setNftSerialNumber] = useState(null);
+  const [assetTokenIdState, setAssetTokenIdState] = useState(null);
+
   // --- Create a new wallet via the Account Factory ---
   const handleCreateVault = async () => {
     setIsProcessing(true);
     setStatus("1/3: Generating secure keys on your device...");
     try {
       // 1. Generate new keys on the device
-      const newPrivateKey = PrivateKey.generateECDSA();
-      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
+      const newPrivateKey = PrivateKey.generateED25519();
+      const newPrivateKeyHex = newPrivateKey.toStringRaw();
       const newPublicKey = newPrivateKey.publicKey.toStringRaw();
 
       // 2. Call our backend to create the account on Hedera
@@ -74,7 +85,7 @@ function App() {
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       const provider = getProvider();
-      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+      const newSigner = new ethers.Wallet("0x" + newPrivateKeyHex, provider);
 
       setSigner(newSigner);
       setAccountId(newAccountId);
@@ -91,75 +102,96 @@ function App() {
   const handleMint = async () => {
     if (!signer || !accountId) return alert("Signer not initialized.");
     setIsTransactionLoading(true);
-    setStatus("🚀 Minting RWA NFT...");
-    try {
-      // Step 1: Associate the token with the user's account (client-side)
-      setStatus("⏳ 1/2: Associating token with your account...");
-      try {
-        const userAssetTokenContract = getAssetTokenContract(signer);
-        const assocTx = await userAssetTokenContract.associate({ gasLimit: 1_000_000 });
-        await assocTx.wait();
-        setStatus("✅ Association successful!");
-      } catch (e) {
-        // This is a workaround. The contract reverts with a generic "HTS association failed"
-        // for multiple reasons, including if the token is already associated.
-        // We'll optimistically assume the association is already in place and proceed.
-        // The backend mint call will fail if the association is truly missing.
-        console.warn("Association transaction failed, proceeding anyway. This may be because the token is already associated.", e);
-        setStatus("⚠️ Association failed or skipped. Proceeding to mint...");
-      }
+    // This is a placeholder for P5's work. It will set the state needed by handleList.
+    console.log("P5 is working on this handleMint function");
+    // For testing purposes, let's assume P5's function successfully returns and sets these values.
+    const MOCK_SERIAL_NUMBER = "1"; // Replace with actual serial from backend in the future
 
-      // Step 2: Call the backend to mint the token (server-side)
-      setStatus("⏳ 2/2: Calling secure backend to mint...");
-      const response = await fetch(mintRwaViaUssdUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: accountId,
-          assetType: "Yam Harvest Future",
-          quality: "Grade A",
-          location: "Ikorodu, Nigeria"
-        }),
-      });
+    const rawPrivateKey = localStorage.getItem('integro-private-key');
+    const userPrivateKey = PrivateKey.fromStringED25519(rawPrivateKey);
+    const client = Client.forTestnet();
+    client.setOperator(AccountId.fromString(accountId), userPrivateKey);
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Backend minting request failed.');
-      }
+    const associateTx = new TokenAssociateTransaction()
+      .setAccountId(accountId)
+      .setTokenIds([assetTokenId])
+      .freezeWith(client);
 
-      const mintedTokenId = data.tokenId;
-      setTokenId(mintedTokenId);
-      setFlowState("MINTED");
-      setStatus(`✅ NFT Minted! Token ID: ${mintedTokenId}`);
+    const associateSign = await associateTx.sign(userPrivateKey);
+    const associateSubmit = await associateSign.execute(client);
+    const associateRx = await associateSubmit.getReceipt(client);
 
-    } catch (error) {
-      console.error("Minting failed:", error);
-      setStatus(`❌ Minting Failed: ${error.message}`);
-    } finally {
-      setIsTransactionLoading(false);
+    if (associateRx.status.toString() !== 'SUCCESS' && associateRx.status.toString() !== 'TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT') {
+      throw new Error(`Token association failed with status: ${associateRx.status.toString()}`);
     }
+
+    setNftSerialNumber(MOCK_SERIAL_NUMBER);
+    setAssetTokenIdState(assetTokenId); // From hedera.js
+    setFlowState("MINTED");
+    setStatus(`✅ Mock NFT Minted! Serial: ${MOCK_SERIAL_NUMBER}`);
+    setIsTransactionLoading(false);
   };
 
   const handleList = async () => {
-    if (!signer || !tokenId) return alert("Please mint an NFT first.");
+    // 1. Prerequisites Check
+    const rawPrivateKey = localStorage.getItem('integro-private-key');
+    if (!signer || !accountId || !rawPrivateKey || !assetTokenIdState || !nftSerialNumber || flowState !== 'MINTED') {
+      alert("Prerequisites not met. Ensure a vault is created and an NFT has been minted.");
+      return;
+    }
+
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
+
     try {
-      const userAssetTokenContract = getAssetTokenContract(signer);
-      const userEscrowContract = getEscrowContract(signer);
+      // 2. SDK NFT Approval
+      console.log("Step 1: SDK NFT Approval");
+      setStatus("⏳ 1/3: Creating SDK client...");
 
-      setStatus("⏳ Approving Escrow contract...");
-      const approveTx = await userAssetTokenContract.approve(escrowContractAddress, tokenId);
-      await approveTx.wait();
-      setStatus("✅ Approval successful!");
+      const userPrivateKey = PrivateKey.fromStringED25519(rawPrivateKey);
+      const userAccountId = AccountId.fromString(accountId);
 
-      setStatus("⏳ Listing on marketplace...");
-      const priceInTinybars = BigInt(50 * 1e8); // 50 HBAR
-      const listTx = await userEscrowContract.listAsset(tokenId, priceInTinybars);
-      await listTx.wait();
+      const userClient = Client.forTestnet();
+      userClient.setOperator(userAccountId, userPrivateKey);
 
+      setStatus("⏳ 2/3: Building & signing native approval...");
+      const allowanceTx = new AccountAllowanceApproveTransaction()
+        .approveTokenNftAllowance(new NftId(TokenId.fromString(assetTokenIdState), nftSerialNumber), accountId, escrowContractAccountId);
+
+      const frozenTx = await allowanceTx.freezeWith(userClient);
+      const signedTx = await frozenTx.sign(userPrivateKey);
+      const txResponse = await signedTx.execute(userClient);
+      const receipt = await txResponse.getReceipt(userClient);
+
+      if (receipt.status.toString() !== 'SUCCESS') {
+        console.error("Receipt:", JSON.stringify(receipt, null, 2));
+        throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
+      }
+      console.log("SDK Approval successful!");
+      setStatus("✅ SDK Approval Successful!");
+
+      // 3. Prepare Solidity Call Parameters
+      console.log("Step 2: Preparing EVM call parameters");
+      setStatus("⏳ 3/3: Preparing to list on marketplace...");
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+      const serialBigInt = BigInt(nftSerialNumber);
+      const priceInTinybars = BigInt(50 * 1e8);
+
+      // 4. Call listAsset (Ethers.js)
+      console.log("Step 3: Calling listAsset on Escrow contract");
+      const escrowContract = getEscrowContract(signer);
+      const listTxResponse = await escrowContract.listAsset(
+        `0x${tokenSolidityAddress}`,
+        serialBigInt,
+        priceInTinybars,
+        { gasLimit: 1000000 }
+      );
+      await listTxResponse.wait();
+
+      // 5. Update State
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
+      console.log("Listing successful!");
 
     } catch (error) {
       console.error("Listing failed:", error);
