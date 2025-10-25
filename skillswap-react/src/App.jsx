@@ -203,7 +203,6 @@ function App() {
     // 1. Prerequisites Check
     const rawPrivateKey = localStorage.getItem('integro-private-key');
     if (!signer || !accountId || !rawPrivateKey || !assetTokenIdState || !nftSerialNumber || flowState !== 'MINTED') {
-      alert("Prerequisites not met. Ensure a vault is created and an NFT has been minted.");
       return;
     }
 
