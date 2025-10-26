@@ -97,6 +97,7 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
         throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
       }
 
+      // The admin key is ECDSA. The raw key from secrets does not have a '0x' prefix.
       const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
       const client = Client.forTestnet().setOperator(adminId, adminPrivateKey);
 
