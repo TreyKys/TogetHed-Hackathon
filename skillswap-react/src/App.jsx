@@ -200,67 +200,88 @@ function App() {
   };
 
  const handleList = async () => {
+  setIsTransactionLoading(true);
+  setStatus("🚀 Listing NFT for sale...");
 
-    setIsTransactionLoading(true);
-    setStatus("🚀 Listing NFT for sale...");
+  try {
+    // 2. SDK NFT Approval
+    console.log("Step 1: SDK NFT Approval");
+    setStatus("⏳ 1/3: Creating SDK client...");
 
-    try {
-      // 2. SDK NFT Approval
-      console.log("Step 1: SDK NFT Approval");
-      setStatus("⏳ 1/3: Creating SDK client...");
+    // load the stored key that was saved when vault was created
+    const storedKey = localStorage.getItem('integro-private-key');
+    if (!storedKey) throw new Error('No private key found in localStorage. Please create or restore your vault.');
 
-           const userPrivateKey = PrivateKey.fromStringECDSA(PrivateKey);
-      const userAccountId = AccountId.fromString(accountId);
+    // storedKey includes '0x' prefix (from ethers). SDK expects raw hex, so strip '0x'
+    const rawKeyHex = storedKey.startsWith('0x') ? storedKey.slice(2) : storedKey;
 
-      const userClient = Client.forTestnet();
-      userClient.setOperator(userAccountId, userPrivateKey);
+    // create the PrivateKey instance for the SDK
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawKeyHex);
 
-      setStatus("⏳ 2/3: Building & signing native approval...");
-      const allowanceTx = new AccountAllowanceApproveTransaction()
-        .approveTokenNftAllowance(new NftId(TokenId.fromString(assetTokenIdState), nftSerialNumber), accountId, escrowContractAccountId);
+    // ensure we have an accountId in state
+    if (!accountId) throw new Error('No accountId available in state. Please create or restore your vault.');
 
-      const frozenTx = await allowanceTx.freezeWith(userClient);
-      const signedTx = await frozenTx.sign(userPrivateKey);
-      const txResponse = await signedTx.execute(userClient);
-      const receipt = await txResponse.getReceipt(userClient);
+    const userAccountId = AccountId.fromString(accountId);
 
-      if (receipt.status.toString() !== 'SUCCESS') {
-        console.error("Receipt:", JSON.stringify(receipt, null, 2));
-        throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
-      }
-      console.log("SDK Approval successful!");
-      setStatus("✅ SDK Approval Successful!");
+    // create client and set operator
+    const userClient = Client.forTestnet();
+    userClient.setOperator(userAccountId, userPrivateKey);
 
-      // 3. Prepare Solidity Call Parameters
-      console.log("Step 2: Preparing EVM call parameters");
-      setStatus("⏳ 3/3: Preparing to list on marketplace...");
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
-      const serialBigInt = BigInt(nftSerialNumber);
-      const priceInTinybars = BigInt(50 * 1e8);
+    setStatus("⏳ 2/3: Building & signing native approval...");
 
-      // 4. Call listAsset (Ethers.js)
-      console.log("Step 3: Calling listAsset on Escrow contract");
-      const escrowContract = getEscrowContract(signer);
-      const listTxResponse = await escrowContract.listAsset(
-        `0x${tokenSolidityAddress}`,
-        serialBigInt,
-        priceInTinybars,
-        { gasLimit: 1000000 }
-      );
-      await listTxResponse.wait();
+    // Build the NFT allowance approval
+    // Ensure assetTokenIdState and nftSerialNumber exist
+    if (!assetTokenIdState) throw new Error('No assetTokenIdState set — cannot approve NFT allowance.');
+    if (nftSerialNumber == null) throw new Error('No nftSerialNumber set — cannot approve NFT allowance.');
 
-      // 5. Update State
-      setFlowState("LISTED");
-      setStatus(`✅ NFT Listed for 50 HBAR!`);
-      console.log("Listing successful!");
+    const tokenIdObj = TokenId.fromString(assetTokenIdState);
+    const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
 
-    } catch (error) {
-      console.error("Listing failed:", error);
-      setStatus(`❌ Listing Failed: ${error.message}`);
-    } finally {
-      setIsTransactionLoading(false);
+    const allowanceTx = new AccountAllowanceApproveTransaction()
+      .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
+
+    const frozenTx = await allowanceTx.freezeWith(userClient);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(userClient);
+    const receipt = await txResponse.getReceipt(userClient);
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      console.error("Receipt:", JSON.stringify(receipt, null, 2));
+      throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
     }
-  };
+    console.log("SDK Approval successful!");
+    setStatus("✅ SDK Approval Successful!");
+
+    // 3. Prepare Solidity Call Parameters
+    console.log("Step 2: Preparing EVM call parameters");
+    setStatus("⏳ 3/3: Preparing to list on marketplace...");
+    const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+    const serialBigInt = BigInt(nftSerialNumber);
+    const priceInTinybars = BigInt(50 * 1e8);
+
+    // 4. Call listAsset (Ethers.js)
+    console.log("Step 3: Calling listAsset on Escrow contract");
+    const escrowContract = getEscrowContract(signer);
+    const listTxResponse = await escrowContract.listAsset(
+      `0x${tokenSolidityAddress}`,
+      serialBigInt,
+      priceInTinybars,
+      { gasLimit: 1000000 }
+    );
+    await listTxResponse.wait();
+
+    // 5. Update State
+    setFlowState("LISTED");
+    setStatus(`✅ NFT Listed for 50 HBAR!`);
+    console.log("Listing successful!");
+
+  } catch (error) {
+    console.error("Listing failed:", error);
+    setStatus(`❌ Listing Failed: ${error.message}`);
+  } finally {
+    setIsTransactionLoading(false);
+  }
+};
 
   const handleBuy = async () => {
     if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
