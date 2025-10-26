@@ -209,7 +209,7 @@ function App() {
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
 
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey.slice(2));
+        const userPrivateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
       const userAccountId = AccountId.fromString(accountId);
 
       const userClient = Client.forTestnet();
