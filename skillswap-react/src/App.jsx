@@ -15,6 +15,7 @@ import {
   escrowContractAddress,
   escrowContractAccountId,
   assetTokenId,
+  assetTokenContractAddress,
   getProvider
 } from './hedera.js';
 
@@ -291,7 +292,6 @@ function App() {
       // 2. Prepare Solidity Call Parameters
       console.log("Step 2: Preparing EVM call parameters");
       setStatus("⏳ 3/3: Preparing to list on marketplace...");
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
       const serialBigInt = BigInt(nftSerialNumber);
       const priceInTinybars = BigInt(50 * 1e8);
 
@@ -299,6 +299,7 @@ function App() {
       console.log("Step 3: Calling listAsset on Escrow contract");
       const escrowContract = getEscrowContract(signer);
       const listTxResponse = await escrowContract.listAsset(
+        assetTokenContractAddress,
         serialBigInt,
         priceInTinybars,
         { gasLimit: 1000000 }
@@ -326,10 +327,8 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
       const priceInWeibars = ethers.parseEther("50");
 
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
-
       const fundTx = await userEscrowContract.fundEscrow(
-        `0x${tokenSolidityAddress}`,
+        assetTokenContractAddress,
         nftSerialNumber,
         {
           value: priceInWeibars,
@@ -355,9 +354,8 @@ function App() {
     setStatus("🚀 Confirming Delivery...");
     try {
       const userEscrowContract = getEscrowContract(signer);
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
       const confirmTx = await userEscrowContract.confirmDelivery(
-        `0x${tokenSolidityAddress}`,
+        assetTokenContractAddress,
         nftSerialNumber,
         {
           gasLimit: 1000000
