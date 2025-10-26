@@ -6,7 +6,7 @@ const escrowContractABI = [{"inputs":[{"internalType":"address","name":"_assetTo
 // --- 1. Export Required IDs and Addresses ---
 export const escrowContractAddress = "0xB201fbf193a82eb1f41EBBfD2138917EAa53507C";
 export const escrowContractAccountId = "0.0.7103874";
-export const assetTokenId = "0.0.7130964"; // The one true Token ID for the NFT collection
+export const assetTokenId = "0.0.7134449"; // The one true Token ID for the NFT collection
 
 // --- 2. Export Provider ---
 export const getProvider = () => {
