@@ -15,8 +15,8 @@ import {
   escrowContractAddress,
   escrowContractAccountId,
   assetTokenId,
-  assetTokenContractAddress,
-  getProvider
+  getProvider,
+  assetTokenContractAddress
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -327,8 +327,10 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
       const priceInWeibars = ethers.parseEther("50");
 
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+
       const fundTx = await userEscrowContract.fundEscrow(
-        assetTokenContractAddress,
+        `0x${tokenSolidityAddress}`,
         nftSerialNumber,
         {
           value: priceInWeibars,
@@ -354,8 +356,9 @@ function App() {
     setStatus("🚀 Confirming Delivery...");
     try {
       const userEscrowContract = getEscrowContract(signer);
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
       const confirmTx = await userEscrowContract.confirmDelivery(
-        assetTokenContractAddress,
+        `0x${tokenSolidityAddress}`,
         nftSerialNumber,
         {
           gasLimit: 1000000
