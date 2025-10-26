@@ -82,7 +82,9 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
   });
 });
 
-exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdminPrivateKey] }, (request, response) => {
+exports.mintRWAviaUSSD = onRequest({ 
+  secrets: [hederaAdminAccountId, hederaAdminPrivateKey, hederaAdminSupplyKey] 
+}, (request, response) => {
   cors(request, response, async () => {
     if (request.method !== "POST") {
       return response.status(405).send("Method Not Allowed");
@@ -95,12 +97,15 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
 
       const adminId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
-      if (!rawAdminPrivateKey || !adminId) {
-        throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
+      const rawSupplyKey = hederaAdminSupplyKey.value();
+
+      if (!rawAdminPrivateKey || !adminId || !rawSupplyKey) {
+        throw new Error("Admin credentials or supply key are not set as secrets.");
       }
 
-      // The admin key is ECDSA. The raw key from secrets does not have a '0x' prefix.
       const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
+      const supplyPrivateKey = PrivateKey.fromStringECDSA(rawSupplyKey);
+
       const client = Client.forTestnet().setOperator(adminId, adminPrivateKey);
 
       // --- Minting Logic ---
@@ -109,42 +114,55 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
         throw new Error("Metadata exceeds 100 bytes limit.");
       }
 
-      const mintTx = new TokenMintTransaction()
+      const mintTx = await new TokenMintTransaction()
         .setTokenId(assetTokenContractId)
-        .setMetadata([metadata]);
+        .setMetadata([metadata])
+        .freezeWith(client); // Freeze first
 
-      const mintTxSubmit = await mintTx.execute(client);
+      // Sign with supply key
+      const signedMintTx = await mintTx.sign(supplyPrivateKey);
+      const mintTxSubmit = await signedMintTx.execute(client);
       const mintRx = await mintTxSubmit.getReceipt(client);
 
       if (!mintRx.serials || mintRx.serials.length === 0) {
-          throw new Error("Minting succeeded but no serial number was returned.");
+        throw new Error("Minting succeeded but no serial number was returned.");
       }
-      const serialNumber = mintRx.serials[0].low;
+
+      // Correct serial number extraction
+      const serialNumber = Number(mintRx.serials[0].toString());
 
       // --- Transfer Logic ---
       const transferTx = await new TransferTransaction()
-          .addNftTransfer(assetTokenContractId, serialNumber, adminId, accountId)
-          .execute(client);
+        .addNftTransfer(assetTokenContractId, serialNumber, adminId, accountId)
+        .freezeWith(client)
+        .execute(client);
 
       const transferRx = await transferTx.getReceipt(client);
 
       if (transferRx.status.toString() !== 'SUCCESS') {
-          throw new Error(`NFT transfer failed with status: ${transferRx.status.toString()}`);
+        throw new Error(`NFT transfer failed with status: ${transferRx.status.toString()}`);
       }
 
       console.log(`SUCCESS: RWA minted and transferred to user ${accountId}. New Serial Number: ${serialNumber}.`);
       return response.status(200).send({
-          tokenId: assetTokenContractId,
-          serialNumber: serialNumber
+        tokenId: assetTokenContractId,
+        serialNumber: serialNumber
       });
 
     } catch (error) {
-      // Handle common Hedera errors with actionable messages
+      // Enhanced error handling
       if (error.message && error.message.includes("ACCOUNT_KYC_NOT_GRANTED_FOR_TOKEN")) {
         return response.status(400).send({ error: "User account must be KYC'd and associated with the token before minting." });
       }
       if (error.message && error.message.includes("INVALID_SIGNATURE")) {
-        return response.status(400).send({ error: "Invalid signature. Check admin credentials." });
+        console.error("Signature error details:", {
+          hasAdminKey: !!hederaAdminPrivateKey.value(),
+          hasSupplyKey: !!hederaAdminSupplyKey.value(),
+          tokenId: assetTokenContractId
+        });
+        return response.status(400).send({ 
+          error: "Invalid signature. Check that supply key matches the token's supply key and all keys are correct." 
+        });
       }
       if (error.message && error.message.includes("INVALID_TOKEN_ID")) {
         return response.status(400).send({ error: "Invalid token ID. Check assetTokenContractId." });
