@@ -209,7 +209,7 @@ function App() {
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
 
-        const userPrivateKey = PrivateKey.fromStringECDSA('integro-private-key'.slice(2));
+        const userPrivateKey = PrivateKey.fromStringECDSA('integro-private-key');
       const userAccountId = AccountId.fromString(accountId);
 
       const userClient = Client.forTestnet();
