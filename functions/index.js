@@ -6,7 +6,9 @@ const {
   AccountCreateTransaction,
   Hbar,
   PublicKey,
-  AccountId
+  AccountId,
+  TokenMintTransaction,
+  TransferTransaction
 } = require("@hashgraph/sdk");
 const cors = require("cors")({ origin: true });
 const ethers = require("ethers");
@@ -88,82 +90,50 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       if (!accountId || !assetType || !quality || !location) {
         throw new Error("Missing required fields: accountId, assetType, quality, location.");
       }
+
+      const adminId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
-      if (!rawAdminPrivateKey) {
-        throw new Error("Admin private key is not set as a secret in this V2 function environment.");
+      if (!rawAdminPrivateKey || !adminId) {
+        throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
       }
 
-      // --- Ethers.js Setup ---
-      const hederaTestnet = {
-        name: "Hedera Testnet",
-        chainId: 296,
-        ensAddress: null, // Hedera does not support ENS
-      };
-      const provider = new ethers.JsonRpcProvider("https://testnet.hashio.io/api", hederaTestnet);
-      const adminWallet = new ethers.Wallet(`0x${rawAdminPrivateKey}`, provider);
-
-      // Convert contract and user account to EVM addresses
-      const assetTokenAddress = toEvmAddress(assetTokenContractId);
-      if (!assetTokenAddress) {
-        throw new Error("Invalid assetTokenContractId format.");
-      }
-      const userEvmAddress = toEvmAddress(accountId);
-      if (!userEvmAddress) {
-        throw new Error("Invalid accountId format. Must be a valid Hedera AccountId.");
-      }
-      if (!isValidEvmAddress(userEvmAddress)) {
-        throw new Error("User EVM address is invalid. ENS names are not supported on Hedera.");
-      }
-
-      const assetToken = new ethers.Contract(assetTokenAddress, assetTokenABI, adminWallet);
+      const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
+      const client = Client.forTestnet().setOperator(adminId, adminPrivateKey);
 
       // --- Minting Logic ---
-      let tx, receipt;
-      try {
-        // Estimate gas and add a 20% buffer
-        const estimatedGas = await assetToken.safeMint.estimateGas(
-          userEvmAddress, assetType, quality, location
-        );
-        const gasLimit = Math.ceil(Number(estimatedGas) * 1.2);
-
-        tx = await assetToken.safeMint(
-          userEvmAddress,
-          assetType,
-          quality,
-          location,
-          { gasLimit }
-        );
-        receipt = await tx.wait();
-      } catch (err) {
-        if (err.code === "UNSUPPORTED_OPERATION" && err.operation === "getEnsAddress") {
-          throw new Error("ENS is not supported on Hedera. Use a direct EVM address.");
-        }
-        if (err.code === "INSUFFICIENT_GAS") {
-          throw new Error("Transaction failed due to insufficient gas. Please try again with a higher gas limit.");
-        }
-        throw err;
+      const metadata = Buffer.from(JSON.stringify({ assetType, quality, location }));
+      if (metadata.length > 100) {
+        throw new Error("Metadata exceeds 100 bytes limit.");
       }
 
-      if (!receipt.logs || receipt.logs.length === 0) {
-        throw new Error("Transaction receipt contained no logs. Cannot determine Token ID.");
+      const mintTx = new TokenMintTransaction()
+        .setTokenId(assetTokenContractId)
+        .setMetadata([metadata]);
+
+      const mintTxSubmit = await mintTx.execute(client);
+      const mintRx = await mintTxSubmit.getReceipt(client);
+
+      if (!mintRx.serials || mintRx.serials.length === 0) {
+          throw new Error("Minting succeeded but no serial number was returned.");
+      }
+      const serialNumber = mintRx.serials[0].low;
+
+      // --- Transfer Logic ---
+      const transferTx = await new TransferTransaction()
+          .addNftTransfer(assetTokenContractId, serialNumber, adminId, accountId)
+          .execute(client);
+
+      const transferRx = await transferTx.getReceipt(client);
+
+      if (transferRx.status.toString() !== 'SUCCESS') {
+          throw new Error(`NFT transfer failed with status: ${transferRx.status.toString()}`);
       }
 
-      // --- Event Parsing ---
-      const transferEvent = receipt.logs.map(log => {
-        try {
-          return assetToken.interface.parseLog(log);
-        } catch (e) {
-          return null;
-        }
-      }).find(log => log && log.name === "Transfer");
-
-      if (!transferEvent) {
-        throw new Error("Expected a Transfer event but did not find one in the receipt.");
-      }
-      const mintedTokenId = transferEvent.args.tokenId.toString();
-
-      console.log(`SUCCESS: RWA minted for user ${accountId}. New Token ID: ${mintedTokenId}.`);
-      return response.status(200).send({ tokenId: mintedTokenId });
+      console.log(`SUCCESS: RWA minted and transferred to user ${accountId}. New Serial Number: ${serialNumber}.`);
+      return response.status(200).send({
+          tokenId: assetTokenContractId,
+          serialNumber: serialNumber
+      });
 
     } catch (error) {
       // Handle common Hedera errors with actionable messages
@@ -173,14 +143,11 @@ exports.mintRWAviaUSSD = onRequest({ secrets: [hederaAdminAccountId, hederaAdmin
       if (error.message && error.message.includes("INVALID_SIGNATURE")) {
         return response.status(400).send({ error: "Invalid signature. Check admin credentials." });
       }
-      if (error.message && error.message.includes("INVALID_CONTRACT_ID")) {
-        return response.status(400).send({ error: "Invalid contract address. Check assetTokenContractId." });
+      if (error.message && error.message.includes("INVALID_TOKEN_ID")) {
+        return response.status(400).send({ error: "Invalid token ID. Check assetTokenContractId." });
       }
       if (error.message && error.message.includes("INSUFFICIENT_TX_FEE")) {
         return response.status(400).send({ error: "Insufficient transaction fee. Try increasing the gas limit or check your account balance." });
-      }
-      if (error.message && (error.message.includes("WRONG_NONCE") || error.message.includes("nonce"))) {
-        return response.status(400).send({ error: "Nonce error. Please retry the transaction or check for pending transactions." });
       }
       console.error("ERROR minting RWA via USSD:", error);
       return response.status(500).send({ error: error.message });
