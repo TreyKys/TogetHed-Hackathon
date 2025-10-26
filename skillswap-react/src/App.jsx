@@ -32,7 +32,6 @@ function App() {
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
 
-
   // --- Check for an existing wallet on load ---
   useEffect(() => {
     const loadWallet = async () => {
@@ -45,10 +44,48 @@ function App() {
         setSigner(loadedSigner);
         setAccountId(storedAccountId);
         setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
+        
+        // Check if token is already associated when restoring wallet
+        await checkTokenAssociation(storedAccountId, storedKey);
       }
     };
     loadWallet();
   }, []);
+
+  // --- Check Token Association ---
+  const checkTokenAssociation = async (storedAccountId, storedKey) => {
+    try {
+      const userPrivateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
+      const userAccountId = AccountId.fromString(storedAccountId);
+      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      // Try to associate - if already associated, this will fail gracefully
+      const associateTx = await new TokenAssociateTransaction()
+        .setAccountId(userAccountId)
+        .setTokenIds([assetTokenId])
+        .freezeWith(userClient);
+
+      const associateSign = await associateTx.sign(userPrivateKey);
+      const associateSubmit = await associateSign.execute(userClient);
+      
+      try {
+        const associateReceipt = await associateSubmit.getReceipt(userClient);
+        if (associateReceipt.status.toString() === 'SUCCESS') {
+          console.log("Token association completed during wallet restore");
+        }
+      } catch (err) {
+        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
+          console.log("Token already associated");
+        } else {
+          throw err;
+        }
+      }
+
+      userClient.close();
+    } catch (error) {
+      console.log("Association check:", error.message);
+    }
+  };
 
   // --- Create a new wallet via the Account Factory ---
   const handleCreateVault = async () => {
@@ -89,12 +126,57 @@ function App() {
       setSigner(newSigner);
       setAccountId(newAccountId);
 
+      // 5. Associate token with new account
+      setStatus("🔗 Associating token with your new vault...");
+      await handleTokenAssociation(newAccountId, newPrivateKeyHex);
+
       setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
     } catch (error) {
       console.error("Vault creation failed:", error);
       setStatus(`❌ Vault creation failed: ${error.message}`);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // --- Token Association Function ---
+  const handleTokenAssociation = async (accountId, privateKeyHex) => {
+    try {
+      const userPrivateKey = PrivateKey.fromStringECDSA(privateKeyHex.slice(2));
+      const userAccountId = AccountId.fromString(accountId);
+      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      setStatus("⏳ Associating token with your account...");
+      const associateTx = await new TokenAssociateTransaction()
+        .setAccountId(userAccountId)
+        .setTokenIds([assetTokenId])
+        .freezeWith(userClient);
+
+      const associateSign = await associateTx.sign(userPrivateKey);
+      const associateSubmit = await associateSign.execute(userClient);
+
+      try {
+        const associateReceipt = await associateSubmit.getReceipt(userClient);
+        if (associateReceipt.status.toString() === 'SUCCESS') {
+          setStatus("✅ Token association successful!");
+          console.log("Token Association Successful!");
+        } else {
+          console.error("ASSOCIATION FAILED:", associateReceipt);
+          throw new Error(`Token Association Failed with status: ${associateReceipt.status.toString()}`);
+        }
+      } catch (err) {
+        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
+          setStatus("✅ Token already associated.");
+          console.log("Token already associated.");
+        } else {
+          throw err;
+        }
+      }
+
+      userClient.close();
+    } catch (error) {
+      console.error("Token association failed:", error);
+      throw error;
     }
   };
 
@@ -107,58 +189,23 @@ function App() {
       alert("Vault not found. Please create a vault first.");
       return;
     }
-    if (assetTokenId !== "0.0.7130964") {
-        alert(`CRITICAL: Incorrect Token ID detected: ${assetTokenId}`);
-        return;
+
+    // Verify we're using the correct token ID
+    if (assetTokenId !== "0.0.7134449") {
+      alert(`CRITICAL: Incorrect Token ID detected: ${assetTokenId}`);
+      return;
     }
 
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
 
-    let userClient;
-
     try {
-      // 2. SDK Token Association
-      setStatus("⏳ 1/3: Preparing to associate token with your account...");
-
-      // NOTE: Stored key has '0x' prefix from ethers, SDK needs raw.
-      const userPrivateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
-      const userAccountId = AccountId.fromString(storedAccountId);
-
-      userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      setStatus("⏳ 2/3: Associating token (requires your signature)...");
-      const associateTx = await new TokenAssociateTransaction()
-        .setAccountId(userAccountId)
-        .setTokenIds([assetTokenId])
-        .freezeWith(userClient);
-
-      const associateSign = await associateTx.sign(userPrivateKey);
-      const associateSubmit = await associateSign.execute(userClient);
-
-      try {
-        const associateReceipt = await associateSubmit.getReceipt(userClient);
-        if (associateReceipt.status.toString() === 'SUCCESS') {
-          setStatus("✅ Association successful! Proceeding to mint...");
-          console.log("Token Association Successful!");
-        } else {
-          // This path may not be hit if getReceipt throws, but is a fallback.
-          console.error("ASSOCIATION FAILED:", associateReceipt);
-          throw new Error(`Token Association Failed with status: ${associateReceipt.status.toString()}`);
-        }
-      } catch (err) {
-        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
-          setStatus("✅ Token already associated. Proceeding to mint...");
-          console.log("Token already associated, proceeding to mint.");
-        } else {
-          // Re-throw other errors
-          throw err;
-        }
-      }
-
+      // 2. Ensure Token Association (in case it wasn't done during vault creation)
+      setStatus("⏳ 1/3: Ensuring token association...");
+      await handleTokenAssociation(storedAccountId, storedKey);
 
       // 3. Backend Mint Request
-      setStatus("⏳ 3/3: Calling secure backend to mint...");
+      setStatus("⏳ 2/3: Calling secure backend to mint...");
       const response = await fetch(mintRwaViaUssdUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,11 +227,11 @@ function App() {
       const { tokenId: receivedTokenId, serialNumber } = data;
 
       if (receivedTokenId !== assetTokenId) {
-          console.warn(`Warning: Token ID from backend (${receivedTokenId}) does not match expected ID (${assetTokenId}).`);
+        console.warn(`Warning: Token ID from backend (${receivedTokenId}) does not match expected ID (${assetTokenId}).`);
       }
 
-      setAssetTokenIdState(receivedTokenId); // Store the collection ID
-      setNftSerialNumber(serialNumber); // Store the unique serial number
+      setAssetTokenIdState(receivedTokenId);
+      setNftSerialNumber(serialNumber);
       setFlowState('MINTED');
       setStatus(`✅ NFT Minted! Serial Number: ${serialNumber}`);
 
@@ -193,95 +240,84 @@ function App() {
       setStatus(`❌ Minting Failed: ${error.message}`);
     } finally {
       setIsTransactionLoading(false);
-      if (userClient) {
-        userClient.close();
-      }
     }
   };
 
- const handleList = async () => {
-  setIsTransactionLoading(true);
-  setStatus("🚀 Listing NFT for sale...");
+  const handleList = async () => {
+    setIsTransactionLoading(true);
+    setStatus("🚀 Listing NFT for sale...");
 
-  try {
-    // 2. SDK NFT Approval
-    console.log("Step 1: SDK NFT Approval");
-    setStatus("⏳ 1/3: Creating SDK client...");
+    try {
+      // 1. SDK NFT Approval
+      console.log("Step 1: SDK NFT Approval");
+      setStatus("⏳ 1/3: Creating SDK client...");
 
-    // load the stored key that was saved when vault was created
-    const storedKey = localStorage.getItem('integro-private-key');
-    if (!storedKey) throw new Error('No private key found in localStorage. Please create or restore your vault.');
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error('No private key found in localStorage. Please create or restore your vault.');
 
-    // storedKey includes '0x' prefix (from ethers). SDK expects raw hex, so strip '0x'
-    const rawKeyHex = storedKey.startsWith('0x') ? storedKey.slice(2) : storedKey;
+      const rawKeyHex = storedKey.startsWith('0x') ? storedKey.slice(2) : storedKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawKeyHex);
 
-    // create the PrivateKey instance for the SDK
-    const userPrivateKey = PrivateKey.fromStringECDSA(rawKeyHex);
+      if (!accountId) throw new Error('No accountId available in state. Please create or restore your vault.');
+      const userAccountId = AccountId.fromString(accountId);
 
-    // ensure we have an accountId in state
-    if (!accountId) throw new Error('No accountId available in state. Please create or restore your vault.');
+      const userClient = Client.forTestnet();
+      userClient.setOperator(userAccountId, userPrivateKey);
 
-    const userAccountId = AccountId.fromString(accountId);
+      setStatus("⏳ 2/3: Building & signing native approval...");
 
-    // create client and set operator
-    const userClient = Client.forTestnet();
-    userClient.setOperator(userAccountId, userPrivateKey);
+      // Build the NFT allowance approval
+      if (!assetTokenIdState) throw new Error('No assetTokenIdState set — cannot approve NFT allowance.');
+      if (nftSerialNumber == null) throw new Error('No nftSerialNumber set — cannot approve NFT allowance.');
 
-    setStatus("⏳ 2/3: Building & signing native approval...");
+      const tokenIdObj = TokenId.fromString(assetTokenIdState);
+      const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
 
-    // Build the NFT allowance approval
-    // Ensure assetTokenIdState and nftSerialNumber exist
-    if (!assetTokenIdState) throw new Error('No assetTokenIdState set — cannot approve NFT allowance.');
-    if (nftSerialNumber == null) throw new Error('No nftSerialNumber set — cannot approve NFT allowance.');
+      const allowanceTx = new AccountAllowanceApproveTransaction()
+        .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
 
-    const tokenIdObj = TokenId.fromString(assetTokenIdState);
-    const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
+      const frozenTx = await allowanceTx.freezeWith(userClient);
+      const signedTx = await frozenTx.sign(userPrivateKey);
+      const txResponse = await signedTx.execute(userClient);
+      const receipt = await txResponse.getReceipt(userClient);
 
-    const allowanceTx = new AccountAllowanceApproveTransaction()
-      .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
+      if (receipt.status.toString() !== 'SUCCESS') {
+        console.error("Receipt:", JSON.stringify(receipt, null, 2));
+        throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
+      }
+      console.log("SDK Approval successful!");
+      setStatus("✅ SDK Approval Successful!");
 
-    const frozenTx = await allowanceTx.freezeWith(userClient);
-    const signedTx = await frozenTx.sign(userPrivateKey);
-    const txResponse = await signedTx.execute(userClient);
-    const receipt = await txResponse.getReceipt(userClient);
+      // 2. Prepare Solidity Call Parameters
+      console.log("Step 2: Preparing EVM call parameters");
+      setStatus("⏳ 3/3: Preparing to list on marketplace...");
+      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
+      const serialBigInt = BigInt(nftSerialNumber);
+      const priceInTinybars = BigInt(50 * 1e8);
 
-    if (receipt.status.toString() !== 'SUCCESS') {
-      console.error("Receipt:", JSON.stringify(receipt, null, 2));
-      throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
+      // 3. Call listAsset (Ethers.js)
+      console.log("Step 3: Calling listAsset on Escrow contract");
+      const escrowContract = getEscrowContract(signer);
+      const listTxResponse = await escrowContract.listAsset(
+        `0x${tokenSolidityAddress}`,
+        serialBigInt,
+        priceInTinybars,
+        { gasLimit: 1000000 }
+      );
+      await listTxResponse.wait();
+
+      // 4. Update State
+      setFlowState("LISTED");
+      setStatus(`✅ NFT Listed for 50 HBAR!`);
+      console.log("Listing successful!");
+
+    } catch (error) {
+      console.error("Listing failed:", error);
+      setStatus(`❌ Listing Failed: ${error.message}`);
+    } finally {
+      setIsTransactionLoading(false);
     }
-    console.log("SDK Approval successful!");
-    setStatus("✅ SDK Approval Successful!");
-
-    // 3. Prepare Solidity Call Parameters
-    console.log("Step 2: Preparing EVM call parameters");
-    setStatus("⏳ 3/3: Preparing to list on marketplace...");
-    const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
-    const serialBigInt = BigInt(nftSerialNumber);
-    const priceInTinybars = BigInt(50 * 1e8);
-
-    // 4. Call listAsset (Ethers.js)
-    console.log("Step 3: Calling listAsset on Escrow contract");
-    const escrowContract = getEscrowContract(signer);
-    const listTxResponse = await escrowContract.listAsset(
-      `0x${tokenSolidityAddress}`,
-      serialBigInt,
-      priceInTinybars,
-      { gasLimit: 1000000 }
-    );
-    await listTxResponse.wait();
-
-    // 5. Update State
-    setFlowState("LISTED");
-    setStatus(`✅ NFT Listed for 50 HBAR!`);
-    console.log("Listing successful!");
-
-  } catch (error) {
-    console.error("Listing failed:", error);
-    setStatus(`❌ Listing Failed: ${error.message}`);
-  } finally {
-    setIsTransactionLoading(false);
-  }
-};
+  };
 
   const handleBuy = async () => {
     if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
@@ -333,7 +369,7 @@ function App() {
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
 
-    } catch (error)      {
+    } catch (error) {
       console.error("Confirmation failed:", error);
       setStatus(`❌ Confirmation Failed: ${error.message}`);
     } finally {
