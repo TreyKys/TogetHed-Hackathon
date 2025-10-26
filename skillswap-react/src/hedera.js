@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
 export const escrowContractAddress = "0xB201fbf193a82eb1f41EBBfD2138917EAa53507C";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
-export const assetTokenId = "0.0.7130964";
+export const assetTokenId = "0.0.7134449";
 export const escrowContractAccountId = "0.0.7103874";
 
 // --- 2. CONTRACT BLUEPRINTS (ABIs) ---
