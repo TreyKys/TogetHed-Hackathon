@@ -299,7 +299,6 @@ function App() {
       console.log("Step 3: Calling listAsset on Escrow contract");
       const escrowContract = getEscrowContract(signer);
       const listTxResponse = await escrowContract.listAsset(
-        `0x${tokenSolidityAddress}`,
         serialBigInt,
         priceInTinybars,
         { gasLimit: 1000000 }
