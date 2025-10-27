@@ -133,8 +133,9 @@ function App() {
   // --- Token Association Function ---
   const handleTokenAssociation = async (accountId, privateKey) => {
     try {
-      // NOTE: Use PrivateKey.fromString directly, no slicing needed
-      const userPrivateKey = PrivateKey.fromString(privateKey);
+      // NOTE: Hedera SDK requires the raw private key *without* the 0x prefix.
+      const rawPrivateKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
@@ -265,8 +266,9 @@ function App() {
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
 
-      // NOTE: Use PrivateKey.fromString for server-generated key
-      const userPrivateKey = PrivateKey.fromString(storedKey);
+      // NOTE: Hedera SDK requires the raw private key *without* the 0x prefix.
+      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
 
       if (!accountId) throw new Error('No accountId available in state.');
       const userAccountId = AccountId.fromString(accountId);

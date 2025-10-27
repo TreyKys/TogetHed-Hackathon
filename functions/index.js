@@ -58,7 +58,7 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
 
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
-      
+
       // generate a new ECDSA private key and use it to create the Hedera account
       // NOTE: the SDK PrivateKey.generateECDSA() returns a key compatible for EVM aliasing
       const newPriv = PrivateKey.generateECDSA();
