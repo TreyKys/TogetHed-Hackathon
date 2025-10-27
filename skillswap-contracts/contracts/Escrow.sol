@@ -35,7 +35,6 @@ contract Escrow {
     function listAsset(uint256 tokenId, uint256 priceInTinybars) external {
         IERC721 assetToken = IERC721(assetTokenAddress);
         require(assetToken.ownerOf(tokenId) == msg.sender, "Escrow: Only the owner can list the asset.");
-        require(assetToken.getApproved(tokenId) == address(this), "Escrow: Contract must be approved to transfer the asset.");
         require(priceInTinybars > 0, "Escrow: Price must be greater than zero.");
 
         listings[tokenId] = Listing({
