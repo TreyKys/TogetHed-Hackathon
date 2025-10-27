@@ -44,10 +44,11 @@ function App() {
       if (storedKey && storedAccountId && storedEvmAddress) {
         try {
           setStatus("Restoring your secure vault...");
-          // inside useEffect -> loadWallet
+          const provider = getProvider();
+
           const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
           // Use ethers directly for ECDSA key — do not convert via Hashgraph PrivateKey
-          const loadedSigner = new ethers.Wallet(normalizedKey, getProvider());
+          const loadedSigner = new ethers.Wallet(normalizedKey, provider);
           const loadedEvm = await loadedSigner.getAddress();
 
           console.log("Signer correctly initialized on load with address:", loadedEvm);
@@ -83,9 +84,10 @@ function App() {
         throw new Error(data.error || 'Backend request failed.');
       }
 
-      // after receiving data from backend
       const { accountId, privateKey, evmAddress: backendEvm } = data;
 
+      // 2. Save everything to localStorage and update state
+      setStatus("2/2: Finalizing your vault...");
       // ensure privateKey is 0x-prefixed
       const normalizedPriv = privateKey.startsWith("0x") ? privateKey : "0x" + privateKey;
 
@@ -109,12 +111,13 @@ function App() {
       setAccountId(accountId);
       setEvmAddress(derivedEvm);
 
+
       // Display credentials to user once for backup
       alert(
         `Vault Created Successfully!\n\nPlease back up these details securely:\n
         Account ID: ${accountId}\n
-        Private Key: ${privateKey}\n
-        EVM Address: ${evmAddress}`
+        Private Key: ${normalizedPriv}\n
+        EVM Address: ${derivedEvm}`
        );
 
       setStatus(`✅ Secure vault created! Your Account ID: ${accountId}`);
@@ -236,34 +239,24 @@ function App() {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
 
-    // 🔍 Step 1: Verify signer existence
-    if (!signer) {
-      console.error("handleList ERROR: Signer is not available!");
-      setStatus("❌ Error: Signer not ready in handleList.");
-      setIsTransactionLoading(false);
-      return;
-    }
-
     try {
       const storedKey = localStorage.getItem('integro-private-key');
       if (!storedKey) throw new Error('No private key found in localStorage.');
 
       // If signer is null or mismatch, reconstruct it here
       const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
-      if (!signer) {
+      let usedSigner = signer;
+      if (!usedSigner) {
         console.warn("handleList: signer was null, reconstructing from localStorage");
-        const publicReconstructedSigner = new ethers.Wallet(normalizedKey, getProvider());
-        setSigner(publicReconstructedSigner); // optional
+        usedSigner = new ethers.Wallet(normalizedKey, getProvider());
+        setSigner(usedSigner); // Update the state with the reconstructed signer
       }
 
       // Use reconstructed signer reference to be sure
-      const usedSigner = signer || new ethers.Wallet(normalizedKey, getProvider());
       const signerAddress = await usedSigner.getAddress();
 
       if (signerAddress.toLowerCase() !== evmAddress.toLowerCase()) {
-        throw new Error(
-          `CRITICAL: Signer address (${signerAddress}) does not match stored EVM address (${evmAddress})`
-        );
+        throw new Error(`CRITICAL: Signer address (${signerAddress}) does not match stored EVM address (${evmAddress})`);
       }
       console.log("handleList Checkpoint: Using verified Signer Address:", signerAddress);
       setStatus(`Debug: handleList using signer ${signerAddress.slice(0, 8)}...`);
