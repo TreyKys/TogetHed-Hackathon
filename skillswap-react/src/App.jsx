@@ -252,7 +252,7 @@ function App() {
       const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
       if (!signer) {
         console.warn("handleList: signer was null, reconstructing from localStorage");
-        publicReconstructedSigner = new ethers.Wallet(normalizedKey, getProvider());
+        const publicReconstructedSigner = new ethers.Wallet(normalizedKey, getProvider());
         setSigner(publicReconstructedSigner); // optional
       }
 
