@@ -11,7 +11,7 @@ const {
   TransferTransaction
 } = require("@hashgraph/sdk");
 const cors = require("cors")({ origin: true });
-const ethers = require("ethers");
+const { ethers } = require("ethers");
 
 // Define secrets
 const hederaAdminAccountId = defineSecret('HEDERA_ADMIN_ACCOUNT_ID');
@@ -47,46 +47,45 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       return response.status(405).send("Method Not Allowed");
     }
     try {
-      // 1. GENERATE NEW KEY PAIR ON THE SERVER
-      const newAccountPrivateKey = PrivateKey.generateECDSA();
-      const newAccountPublicKey = newAccountPrivateKey.publicKey;
-
       const adminAccountId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
 
       if (!adminAccountId || !rawAdminPrivateKey) {
-        throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
+        throw new Error("Admin credentials are not set in the function environment.");
       }
-
       const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
+      const client = Client.forTestnet().setOperator(adminAccountId, adminPrivateKey);
 
-      const client = Client.forTestnet();
-      client.setOperator(adminAccountId, adminPrivateKey);
+      // generate a new ECDSA private key and use it to create the Hedera account
+      // NOTE: the SDK PrivateKey.generateECDSA() returns a key compatible for EVM aliasing
+      const newPriv = PrivateKey.generateECDSA();
+      const newPrivHex0x = "0x" + newPriv.toStringRaw(); // 0x-prefixed hex for ethers
+      const newPubKey = newPriv.publicKey;
 
-      // 2. CREATE THE ACCOUNT ON HEDERA & FUND IT
-      const createAcctTx = await new AccountCreateTransaction()
-        .setKey(newAccountPublicKey)
-        .setInitialBalance(new Hbar(10)) // Fund with 10 HBAR
-        .execute(client);
+      console.log("createAccount: generated ECDSA privateKey (hex):", newPrivHex0x);
 
-      const createAcctRx = await createAcctTx.getReceipt(client);
-      const newAccountId = createAcctRx.accountId;
+      // create the Hedera account with that public key
+      const acctTx = new AccountCreateTransaction()
+        .setKey(newPubKey)
+        .setInitialBalance(new Hbar(10)); // fund so user can transact
 
+      const acctSubmit = await acctTx.execute(client);
+      const acctReceipt = await acctSubmit.getReceipt(client);
+      const newAccountId = acctReceipt.accountId;
       if (!newAccountId) {
-        throw new Error("Hedera network failed to return a new account ID.");
+        throw new Error("Failed to create account; no account id returned.");
       }
+      console.log("createAccount: created accountId:", newAccountId.toString());
 
-      // 3. LOG FOR VERIFICATION AND DERIVE EVM ADDRESS
-      console.log(`SUCCESS: New account created -> ${newAccountId.toString()}`);
-      console.log(`Private Key (for server-side debug): ${newAccountPrivateKey.toString()}`);
+      // Derive the EVM address from the ECDSA private key (ethers)
+      const evmAddress = (new ethers.Wallet(newPrivHex0x)).address;
+      console.log("createAccount: derived evmAddress (from ECDSA key):", evmAddress);
 
-      const evmAddress = `0x${newAccountId.toSolidityAddress()}`;
-
-      // 4. RETURN THE NEW CREDENTIALS TO THE CLIENT
+      // Return accountId, privateKey (0x hex), and evmAddress
       return response.status(200).send({
         accountId: newAccountId.toString(),
-        privateKey: newAccountPrivateKey.toString(),
-        evmAddress: evmAddress
+        privateKey: newPrivHex0x,
+        evmAddress
       });
 
     } catch (error) {
