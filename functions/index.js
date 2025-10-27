@@ -11,7 +11,7 @@ const {
   TransferTransaction
 } = require("@hashgraph/sdk");
 const cors = require("cors")({ origin: true });
-const { ethers } = require("ethers");
+const ethers = require("ethers");
 
 // Define secrets
 const hederaAdminAccountId = defineSecret('HEDERA_ADMIN_ACCOUNT_ID');
