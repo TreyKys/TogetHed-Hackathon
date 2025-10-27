@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
 import {
@@ -244,7 +244,7 @@ function App() {
     }
   };
 
-  const handleList = useCallback(async () => {
+  const handleList = async () => {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
 
@@ -267,6 +267,7 @@ function App() {
 
       setStatus("⏳ 2/3: Building & signing native approval...");
 
+      // Build the NFT allowance approval
       if (!assetTokenIdState) throw new Error('No assetTokenIdState set — cannot approve NFT allowance.');
       if (nftSerialNumber == null) throw new Error('No nftSerialNumber set — cannot approve NFT allowance.');
 
@@ -288,22 +289,24 @@ function App() {
       console.log("SDK Approval successful!");
       setStatus("✅ SDK Approval Successful!");
 
+      // 2. Prepare Solidity Call Parameters
+      console.log("Step 2: Preparing EVM call parameters");
+      setStatus("⏳ 3/3: Preparing to list on marketplace...");
       const serialBigInt = BigInt(nftSerialNumber);
       const priceInTinybars = BigInt(50 * 1e8);
 
-      console.log("Calling listAsset with:", serialBigInt, priceInTinybars);
-
+      // 3. Call listAsset (Ethers.js)
+      console.log("Step 3: Calling listAsset on Escrow contract");
       const escrowContract = getEscrowContract(signer);
-
       const listTxResponse = await escrowContract.listAsset(
+        assetTokenContractAddress,
         serialBigInt,
         priceInTinybars,
-        { gasLimit: 1_000_000 }
+        { gasLimit: 1000000 }
       );
-
       await listTxResponse.wait();
-      console.log("Listing transaction confirmed:", listTxResponse.hash);
 
+      // 4. Update State
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
       console.log("Listing successful!");
@@ -314,9 +317,9 @@ function App() {
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [accountId, assetTokenIdState, nftSerialNumber, signer]);
+  };
 
-  const handleBuy = useCallback(async () => {
+  const handleBuy = async () => {
     if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
@@ -345,9 +348,9 @@ function App() {
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [assetTokenIdState, nftSerialNumber, signer]);
+  };
 
-  const handleConfirm = useCallback(async () => {
+  const handleConfirm = async () => {
     if (!signer || !nftSerialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
@@ -372,7 +375,7 @@ function App() {
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [assetTokenIdState, nftSerialNumber, signer]);
+  };
 
   // --- UI Rendering ---
 

@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
 export const escrowContractAddress = "0x3b9cAe6a57Eb9193066D59faf043cddB5537E1C3";
-export const assetTokenContractAddress = "0x4670300c408d7c_040715ba5f980791EfD0909B7a";
+export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
 export const assetTokenId = "0.0.7134449";
 export const escrowContractAccountId = "0.0.7141711";
 
