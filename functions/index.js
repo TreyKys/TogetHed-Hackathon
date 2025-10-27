@@ -47,10 +47,9 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       return response.status(405).send("Method Not Allowed");
     }
     try {
-      const { publicKey } = request.body;
-      if (!publicKey) {
-        throw new Error("Public key is required in the request body.");
-      }
+      // 1. GENERATE NEW KEY PAIR ON THE SERVER
+      const newAccountPrivateKey = PrivateKey.generateECDSA();
+      const newAccountPublicKey = newAccountPrivateKey.publicKey;
 
       const adminAccountId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
@@ -64,17 +63,32 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
 
-      const transaction = new AccountCreateTransaction()
-        .setKey(PublicKey.fromString(publicKey))
-        .setInitialBalance(new Hbar(10));
-      const txResponse = await transaction.execute(client);
-      const receipt = await txResponse.getReceipt(client);
-      const newAccountId = receipt.accountId;
+      // 2. CREATE THE ACCOUNT ON HEDERA & FUND IT
+      const createAcctTx = await new AccountCreateTransaction()
+        .setKey(newAccountPublicKey)
+        .setInitialBalance(new Hbar(10)) // Fund with 10 HBAR
+        .execute(client);
+
+      const createAcctRx = await createAcctTx.getReceipt(client);
+      const newAccountId = createAcctRx.accountId;
+
       if (!newAccountId) {
         throw new Error("Hedera network failed to return a new account ID.");
       }
-      console.log("SUCCESS: New account created ->", newAccountId.toString());
-      return response.status(200).send({ accountId: newAccountId.toString() });
+
+      // 3. LOG FOR VERIFICATION AND DERIVE EVM ADDRESS
+      console.log(`SUCCESS: New account created -> ${newAccountId.toString()}`);
+      console.log(`Private Key (for server-side debug): ${newAccountPrivateKey.toString()}`);
+
+      const evmAddress = `0x${newAccountId.toSolidityAddress()}`;
+
+      // 4. RETURN THE NEW CREDENTIALS TO THE CLIENT
+      return response.status(200).send({
+        accountId: newAccountId.toString(),
+        privateKey: newAccountPrivateKey.toString(),
+        evmAddress: evmAddress
+      });
+
     } catch (error) {
       console.error("FATAL ERROR in createAccount function:", error);
       return response.status(500).send({ error: error.message });

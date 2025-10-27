@@ -28,6 +28,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
+  const [evmAddress, setEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [assetTokenIdState, setAssetTokenIdState] = useState(null);
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
@@ -38,146 +39,73 @@ function App() {
     const loadWallet = async () => {
       const storedKey = localStorage.getItem('integro-private-key');
       const storedAccountId = localStorage.getItem('integro-account-id');
-      if (storedKey && storedAccountId) {
+      const storedEvmAddress = localStorage.getItem('integro-evm-address');
+
+      if (storedKey && storedAccountId && storedEvmAddress) {
         try {
           setStatus("Restoring your secure vault...");
           const provider = getProvider();
-          const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
-          const loadedSigner = new ethers.Wallet(normalizedKey, provider);
-
-          const address = await loadedSigner.getAddress();
-          console.log("Signer correctly initialized on load with address:", address);
+          // NOTE: The key from the server is ED25519, must be handled differently
+          const loadedSigner = new ethers.Wallet("0x" + PrivateKey.fromString(storedKey).toStringRaw(), provider);
 
           setSigner(loadedSigner);
           setAccountId(storedAccountId);
+          setEvmAddress(storedEvmAddress);
           setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
 
-          // Check if token is already associated when restoring wallet
-          await checkTokenAssociation(storedAccountId, normalizedKey);
+          // No automatic association check on load, it will be done before minting.
+
         } catch (error) {
           console.error("Failed to load wallet on startup:", error);
           setStatus("❌ Could not restore vault. Please create a new one.");
-          localStorage.removeItem('integro-private-key');
-          localStorage.removeItem('integro-account-id');
+          localStorage.clear(); // Clear all vault-related data
         }
       }
     };
     loadWallet();
   }, []);
 
-  // --- Check Token Association ---
-  const checkTokenAssociation = async (storedAccountId, storedKey) => {
-    try {
-      const userPrivateKey = PrivateKey.fromStringECDSA(storedKey.slice(2));
-      const userAccountId = AccountId.fromString(storedAccountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      // Try to associate - if already associated, this will fail gracefully
-      const associateTx = await new TokenAssociateTransaction()
-        .setAccountId(userAccountId)
-        .setTokenIds([assetTokenId])
-        .freezeWith(userClient);
-
-      const associateSign = await associateTx.sign(userPrivateKey);
-      const associateSubmit = await associateSign.execute(userClient);
-      
-      try {
-        const associateReceipt = await associateSubmit.getReceipt(userClient);
-        if (associateReceipt.status.toString() === 'SUCCESS') {
-          console.log("Token association completed during wallet restore");
-        }
-      } catch (err) {
-        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
-          console.log("Token already associated");
-        } else {
-          throw err;
-        }
-      }
-
-      userClient.close();
-    } catch (error) {
-      console.log("Association check:", error.message);
-    }
-  };
-
   // --- Create a new wallet via the Account Factory ---
   const handleCreateVault = async () => {
     setIsProcessing(true);
-    setStatus("1/3: Generating secure keys on your device...");
+    setStatus("1/2: Calling the secure Account Factory...");
     try {
-      // 1. Generate new keys on the device
-      const newPrivateKey = PrivateKey.generateECDSA();
-      const newPrivateKeyHex = `0x${newPrivateKey.toStringRaw()}`;
-      const newPublicKey = newPrivateKey.publicKey.toStringRaw();
-
-      // 2. Call our backend to create the account on Hedera
-      setStatus("2/3: Calling the Account Factory...");
+      // 1. Call our backend to create the account on Hedera
       const response = await fetch(cloudFunctionUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicKey: newPublicKey }),
       });
 
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Backend request failed.');
       }
-      const newAccountId = data.accountId;
 
-      // 3. Save everything and create the signer
-      setStatus("3/3: Finalizing your vault...");
-      localStorage.setItem('integro-private-key', newPrivateKeyHex);
-      localStorage.setItem('integro-account-id', newAccountId);
+      const { accountId, privateKey, evmAddress } = data;
 
-      // 4. Create signer and poll for EVM address propagation on Mirror Node
+      // 2. Save everything to localStorage and update state
+      setStatus("2/2: Finalizing your vault...");
+      localStorage.setItem('integro-private-key', privateKey);
+      localStorage.setItem('integro-account-id', accountId);
+      localStorage.setItem('integro-evm-address', evmAddress);
+
       const provider = getProvider();
-      const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
-      const evmAddress = await newSigner.getAddress();
-
-      let accountIsLive = false;
-      let retries = 0;
-      const maxRetries = 30; // Poll for up to 90 seconds
-      const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/accounts/${evmAddress}`;
-
-      setStatus("⏳ Finalizing account on the network (this may take up to 90 seconds)...");
-
-      console.log(`Polling Mirror Node for EVM address ${evmAddress}...`);
-
-      while (!accountIsLive && retries < maxRetries) {
-        try {
-          const response = await fetch(mirrorNodeUrl);
-          if (response.status === 200) {
-            const data = await response.json();
-            // Check for a non-zero balance to confirm the account is funded and live
-            if (data && data.balance && data.balance.balance > 0) {
-                 console.log(`Account for EVM address ${evmAddress} is now live on Mirror Node with balance: ${data.balance.balance}`);
-                 accountIsLive = true;
-                 break;
-            }
-          } else if (response.status !== 404) {
-              console.warn(`Mirror Node poll attempt #${retries + 1} returned status ${response.status}. Retrying...`);
-          }
-        } catch (e) {
-          console.error(`Mirror Node poll attempt #${retries + 1} failed with error:`, e.message);
-        }
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds between polls
-      }
-
-      if (!accountIsLive) {
-        throw new Error("Account did not appear on the Mirror Node in time.");
-      }
-
-      console.log("Signer correctly initialized on vault creation with address:", evmAddress);
+      const newSigner = new ethers.Wallet("0x" + PrivateKey.fromString(privateKey).toStringRaw(), provider);
 
       setSigner(newSigner);
-      setAccountId(newAccountId);
+      setAccountId(accountId);
+      setEvmAddress(evmAddress);
 
-      // 5. Associate token with new account
-      setStatus("🔗 Associating token with your new vault...");
-      await handleTokenAssociation(newAccountId, newPrivateKeyHex);
+      // Display credentials to user once for backup
+      alert(
+        `Vault Created Successfully!\n\nPlease back up these details securely:\n
+        Account ID: ${accountId}\n
+        Private Key: ${privateKey}\n
+        EVM Address: ${evmAddress}`
+       );
 
-      setStatus(`✅ Secure vault created! Your new Account ID: ${newAccountId}`);
+      setStatus(`✅ Secure vault created! Your Account ID: ${accountId}`);
+
     } catch (error) {
       console.error("Vault creation failed:", error);
       setStatus(`❌ Vault creation failed: ${error.message}`);
@@ -187,9 +115,10 @@ function App() {
   };
 
   // --- Token Association Function ---
-  const handleTokenAssociation = async (accountId, privateKeyHex) => {
+  const handleTokenAssociation = async (accountId, privateKey) => {
     try {
-      const userPrivateKey = PrivateKey.fromStringECDSA(privateKeyHex.slice(2));
+      // NOTE: Use PrivateKey.fromString directly, no slicing needed
+      const userPrivateKey = PrivateKey.fromString(privateKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
@@ -303,19 +232,23 @@ function App() {
     }
 
     try {
-      const currentAddress = await signer.getAddress();
-      console.log("handleList Checkpoint: Using Signer Address:", currentAddress);
-      setStatus(`Debug: handleList using signer ${currentAddress.slice(0, 8)}...`);
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error('No private key found in localStorage.');
+
+      // VERIFY that the signer's address matches the stored EVM address
+      const signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== evmAddress.toLowerCase()) {
+        throw new Error(`CRITICAL: Signer address (${signerAddress}) does not match stored EVM address (${evmAddress})`);
+      }
+      console.log("handleList Checkpoint: Using verified Signer Address:", signerAddress);
+      setStatus(`Debug: handleList using signer ${signerAddress.slice(0, 8)}...`);
 
       // 1. SDK NFT Approval
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
 
-      const storedKey = localStorage.getItem('integro-private-key');
-      if (!storedKey) throw new Error('No private key found in localStorage.');
-
-      const rawKeyHex = storedKey.startsWith('0x') ? storedKey.slice(2) : storedKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawKeyHex);
+      // NOTE: Use PrivateKey.fromString for server-generated key
+      const userPrivateKey = PrivateKey.fromString(storedKey);
 
       if (!accountId) throw new Error('No accountId available in state.');
       const userAccountId = AccountId.fromString(accountId);
@@ -351,14 +284,10 @@ function App() {
       const serialBigInt = BigInt(nftSerialNumber);
       const priceInTinybars = BigInt(50 * 1e8);
 
-      // 3. Call listAsset (Ethers.js) with Reconstructed Signer
-      const provider = getProvider();
-      const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
-      const verifiedSigner = new ethers.Wallet(normalizedKey, provider);
+      // 3. Call listAsset (Ethers.js) using the already verified signer
+      console.log("handleList Checkpoint: About to call listAsset with signer address:", await signer.getAddress());
 
-      console.log("handleList Checkpoint: About to call listAsset with signer address:", await verifiedSigner.getAddress());
-
-      const escrowContract = getEscrowContract(verifiedSigner);
+      const escrowContract = getEscrowContract(signer);
       const listTxResponse = await escrowContract.listAsset(
         serialBigInt,
         priceInTinybars,
