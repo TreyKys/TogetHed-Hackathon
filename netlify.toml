@@ -1,4 +1,19 @@
+# Netlify configuration for the skillswap-react frontend
+
 [build]
-  base    = "skillswap-react"
+  # The directory to change to before starting a build.
+  # Our React app is in the "skillswap-react" subdirectory.
+  base = "skillswap-react/"
+
+  # The command to build the Vite application.
   command = "npm run build"
-  publish = "dist"
+
+  # The directory that contains the built, deploy-ready assets.
+  # Vite's default output directory is "dist".
+  publish = "dist/"
+
+# Redirect all paths to the index.html file to support client-side routing.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

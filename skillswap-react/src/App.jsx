@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import { ethers } from 'ethers';
 import {
@@ -39,15 +39,27 @@ function App() {
       const storedKey = localStorage.getItem('integro-private-key');
       const storedAccountId = localStorage.getItem('integro-account-id');
       if (storedKey && storedAccountId) {
-        setStatus("Restoring your secure vault...");
-        const provider = getProvider();
-        const loadedSigner = new ethers.Wallet(storedKey, provider);
-        setSigner(loadedSigner);
-        setAccountId(storedAccountId);
-        setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
-        
-        // Check if token is already associated when restoring wallet
-        await checkTokenAssociation(storedAccountId, storedKey);
+        try {
+          setStatus("Restoring your secure vault...");
+          const provider = getProvider();
+          const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
+          const loadedSigner = new ethers.Wallet(normalizedKey, provider);
+
+          const address = await loadedSigner.getAddress();
+          console.log("Signer correctly initialized on load with address:", address);
+
+          setSigner(loadedSigner);
+          setAccountId(storedAccountId);
+          setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
+
+          // Check if token is already associated when restoring wallet
+          await checkTokenAssociation(storedAccountId, normalizedKey);
+        } catch (error) {
+          console.error("Failed to load wallet on startup:", error);
+          setStatus("❌ Could not restore vault. Please create a new one.");
+          localStorage.removeItem('integro-private-key');
+          localStorage.removeItem('integro-account-id');
+        }
       }
     };
     loadWallet();
@@ -117,12 +129,46 @@ function App() {
       localStorage.setItem('integro-private-key', newPrivateKeyHex);
       localStorage.setItem('integro-account-id', newAccountId);
 
-      // 4. Add a delay for network propagation
-      setStatus("⏳ Finalizing account on the network (approx. 5 seconds)...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
+      // 4. Create signer and poll for EVM address propagation on Mirror Node
       const provider = getProvider();
       const newSigner = new ethers.Wallet(newPrivateKeyHex, provider);
+      const evmAddress = await newSigner.getAddress();
+
+      let accountIsLive = false;
+      let retries = 0;
+      const maxRetries = 30; // Poll for up to 90 seconds
+      const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/accounts/${evmAddress}`;
+
+      setStatus("⏳ Finalizing account on the network (this may take up to 90 seconds)...");
+
+      console.log(`Polling Mirror Node for EVM address ${evmAddress}...`);
+
+      while (!accountIsLive && retries < maxRetries) {
+        try {
+          const response = await fetch(mirrorNodeUrl);
+          if (response.status === 200) {
+            const data = await response.json();
+            // Check for a non-zero balance to confirm the account is funded and live
+            if (data && data.balance && data.balance.balance > 0) {
+                 console.log(`Account for EVM address ${evmAddress} is now live on Mirror Node with balance: ${data.balance.balance}`);
+                 accountIsLive = true;
+                 break;
+            }
+          } else if (response.status !== 404) {
+              console.warn(`Mirror Node poll attempt #${retries + 1} returned status ${response.status}. Retrying...`);
+          }
+        } catch (e) {
+          console.error(`Mirror Node poll attempt #${retries + 1} failed with error:`, e.message);
+        }
+        retries++;
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds between polls
+      }
+
+      if (!accountIsLive) {
+        throw new Error("Account did not appear on the Mirror Node in time.");
+      }
+
+      console.log("Signer correctly initialized on vault creation with address:", evmAddress);
 
       setSigner(newSigner);
       setAccountId(newAccountId);
@@ -244,22 +290,34 @@ function App() {
     }
   };
 
-  const handleList = useCallback(async () => {
+  const handleList = async () => {
     setIsTransactionLoading(true);
     setStatus("🚀 Listing NFT for sale...");
 
+    // 🔍 Step 1: Verify signer existence
+    if (!signer) {
+      console.error("handleList ERROR: Signer is not available!");
+      setStatus("❌ Error: Signer not ready in handleList.");
+      setIsTransactionLoading(false);
+      return;
+    }
+
     try {
+      const currentAddress = await signer.getAddress();
+      console.log("handleList Checkpoint: Using Signer Address:", currentAddress);
+      setStatus(`Debug: handleList using signer ${currentAddress.slice(0, 8)}...`);
+
       // 1. SDK NFT Approval
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
 
       const storedKey = localStorage.getItem('integro-private-key');
-      if (!storedKey) throw new Error('No private key found in localStorage. Please create or restore your vault.');
+      if (!storedKey) throw new Error('No private key found in localStorage.');
 
       const rawKeyHex = storedKey.startsWith('0x') ? storedKey.slice(2) : storedKey;
       const userPrivateKey = PrivateKey.fromStringECDSA(rawKeyHex);
 
-      if (!accountId) throw new Error('No accountId available in state. Please create or restore your vault.');
+      if (!accountId) throw new Error('No accountId available in state.');
       const userAccountId = AccountId.fromString(accountId);
 
       const userClient = Client.forTestnet();
@@ -267,8 +325,8 @@ function App() {
 
       setStatus("⏳ 2/3: Building & signing native approval...");
 
-      if (!assetTokenIdState) throw new Error('No assetTokenIdState set — cannot approve NFT allowance.');
-      if (nftSerialNumber == null) throw new Error('No nftSerialNumber set — cannot approve NFT allowance.');
+      if (!assetTokenIdState) throw new Error('No assetTokenIdState set.');
+      if (nftSerialNumber == null) throw new Error('No nftSerialNumber set.');
 
       const tokenIdObj = TokenId.fromString(assetTokenIdState);
       const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
@@ -282,41 +340,47 @@ function App() {
       const receipt = await txResponse.getReceipt(userClient);
 
       if (receipt.status.toString() !== 'SUCCESS') {
-        console.error("Receipt:", JSON.stringify(receipt, null, 2));
         throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
       }
       console.log("SDK Approval successful!");
       setStatus("✅ SDK Approval Successful!");
 
+      // 2. Prepare Solidity Call Parameters
+      console.log("Step 2: Preparing EVM call parameters");
+      setStatus("⏳ 3/3: Preparing to list on marketplace...");
       const serialBigInt = BigInt(nftSerialNumber);
       const priceInTinybars = BigInt(50 * 1e8);
 
-      console.log("Calling listAsset with:", serialBigInt, priceInTinybars);
+      // 3. Call listAsset (Ethers.js) with Reconstructed Signer
+      const provider = getProvider();
+      const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
+      const verifiedSigner = new ethers.Wallet(normalizedKey, provider);
 
-      const escrowContract = getEscrowContract(signer);
+      console.log("handleList Checkpoint: About to call listAsset with signer address:", await verifiedSigner.getAddress());
 
+      const escrowContract = getEscrowContract(verifiedSigner);
       const listTxResponse = await escrowContract.listAsset(
         serialBigInt,
         priceInTinybars,
-        { gasLimit: 1_000_000 }
+        { gasLimit: 1000000 }
       );
-
       await listTxResponse.wait();
-      console.log("Listing transaction confirmed:", listTxResponse.hash);
 
+      // 4. Update State
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
       console.log("Listing successful!");
 
     } catch (error) {
       console.error("Listing failed:", error);
-      setStatus(`❌ Listing Failed: ${error.message}`);
+      const currentAddress = signer ? await signer.getAddress() : "null";
+      setStatus(`❌ Listing Failed: ${error.message} (Signer: ${currentAddress})`);
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [accountId, assetTokenIdState, nftSerialNumber, signer]);
+  };
 
-  const handleBuy = useCallback(async () => {
+  const handleBuy = async () => {
     if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
@@ -324,10 +388,7 @@ function App() {
       const userEscrowContract = getEscrowContract(signer);
       const priceInWeibars = ethers.parseEther("50");
 
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
-
       const fundTx = await userEscrowContract.fundEscrow(
-        `0x${tokenSolidityAddress}`,
         nftSerialNumber,
         {
           value: priceInWeibars,
@@ -345,17 +406,15 @@ function App() {
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [assetTokenIdState, nftSerialNumber, signer]);
+  };
 
-  const handleConfirm = useCallback(async () => {
+  const handleConfirm = async () => {
     if (!signer || !nftSerialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
       const userEscrowContract = getEscrowContract(signer);
-      const tokenSolidityAddress = AccountId.fromString(assetTokenIdState).toSolidityAddress();
       const confirmTx = await userEscrowContract.confirmDelivery(
-        `0x${tokenSolidityAddress}`,
         nftSerialNumber,
         {
           gasLimit: 1000000
@@ -372,7 +431,7 @@ function App() {
     } finally {
       setIsTransactionLoading(false);
     }
-  }, [assetTokenIdState, nftSerialNumber, signer]);
+  };
 
   // --- UI Rendering ---
 
