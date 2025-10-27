@@ -47,10 +47,6 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       return response.status(405).send("Method Not Allowed");
     }
     try {
-      // 1. GENERATE NEW KEY PAIR ON THE SERVER
-      const newAccountPrivateKey = PrivateKey.generateECDSA();
-      const newAccountPublicKey = newAccountPrivateKey.publicKey;
-
       const adminAccountId = hederaAdminAccountId.value();
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
 
@@ -63,29 +59,35 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
 
-      // 2. CREATE THE ACCOUNT ON HEDERA & FUND IT
-      const createAcctTx = await new AccountCreateTransaction()
-        .setKey(newAccountPublicKey)
-        .setInitialBalance(new Hbar(10)) // Fund with 10 HBAR
-        .execute(client);
+      // generate a new ECDSA private key and use it to create the Hedera account
+      // NOTE: the SDK PrivateKey.generateECDSA() returns a key compatible for EVM aliasing
+      const newPriv = PrivateKey.generateECDSA();
+      const newPrivHex0x = "0x" + newPriv.toStringRaw(); // 0x-prefixed hex for ethers
+      const newPubKey = newPriv.publicKey;
 
-      const createAcctRx = await createAcctTx.getReceipt(client);
-      const newAccountId = createAcctRx.accountId;
+      console.log("createAccount: generated ECDSA privateKey (hex):", newPrivHex0x);
 
+      // create the Hedera account with that public key
+      const acctTx = new AccountCreateTransaction()
+        .setKey(newPubKey)
+        .setInitialBalance(new Hbar(10)); // fund so user can transact
+
+      const acctSubmit = await acctTx.execute(client);
+      const acctReceipt = await acctSubmit.getReceipt(client);
+      const newAccountId = acctReceipt.accountId;
       if (!newAccountId) {
-        throw new Error("Hedera network failed to return a new account ID.");
+        throw new Error("Failed to create account; no account id returned.");
       }
+      console.log("createAccount: created accountId:", newAccountId.toString());
 
-      // 3. LOG FOR VERIFICATION AND DERIVE EVM ADDRESS
-      console.log(`SUCCESS: New account created -> ${newAccountId.toString()}`);
-      console.log(`Private Key (for server-side debug): ${newAccountPrivateKey.toString()}`);
+      // Derive the EVM address from the ECDSA private key (ethers)
+      const evmAddress = (new ethers.Wallet(newPrivHex0x)).address;
+      console.log("createAccount: derived evmAddress (from ECDSA key):", evmAddress);
 
-      const evmAddress = `0x${newAccountId.toSolidityAddress()}`;
-
-      // 4. RETURN THE NEW CREDENTIALS TO THE CLIENT
+      // Return accountId, privateKey (0x hex), and evmAddress
       return response.status(200).send({
         accountId: newAccountId.toString(),
-        privateKey: newAccountPrivateKey.toString(),
+        privateKey: newPrivHex0x,
         evmAddress: evmAddress
       });
 
