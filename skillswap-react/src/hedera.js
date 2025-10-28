@@ -1,8 +1,8 @@
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
-export const escrowContractAddress = "0x708522128Ff587Cd89F27B7B9883904a96e69b41";
+export const escrowContractAddress = "0xA6ac524581B27Ede4124EC1a967B4b077c899329";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
-export const assetTokenId = "0.0.7134449";
-export const escrowContractAccountId = "0.0.7140680";
+export const assetTokenId = "0.0.7103872";
+export const escrowContractAccountId = "0.0.7148719";
 
 // --- 2. CONTRACT BLUEPRINTS (ABIs) ---
 export const escrowContractABI = [
