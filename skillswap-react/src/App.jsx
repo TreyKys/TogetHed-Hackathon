@@ -10,7 +10,8 @@ import {
   NftId,
   ContractExecuteTransaction,
   ContractFunctionParameters,
-  Hbar
+  Hbar,
+  ContractCallQuery
 } from '@hashgraph/sdk';
 import {
   escrowContractAddress,
@@ -111,6 +112,38 @@ function App() {
       setStatus(`❌ Vault creation failed: ${error.message}`);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const getListingPrice = async (serialNumber) => {
+    const storedKey = localStorage.getItem('integro-private-key');
+    const storedAccountId = localStorage.getItem('integro-account-id');
+    if (!storedKey || !storedAccountId) {
+      throw new Error('Wallet not found. Please create a vault first.');
+    }
+
+    // Setup client
+    const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
+    const userAccountId = AccountId.fromString(storedAccountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    try {
+      const query = new ContractCallQuery()
+        .setContractId(escrowContractAccountId)
+        .setGas(100000) // Gas is not actually consumed for view calls
+        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(serialNumber));
+
+      const txResponse = await query.execute(client);
+      const priceInTinybars = txResponse.getUint256(0);
+
+      console.log(`Fetched price for serial ${serialNumber}: ${priceInTinybars.toNumber()} tinybars`);
+      return priceInTinybars.toNumber();
+    } catch (error) {
+      console.error("Failed to fetch listing price:", error);
+      throw error;
+    } finally {
+      client.close();
     }
   };
 
@@ -302,7 +335,13 @@ function App() {
       const storedKey = localStorage.getItem('integro-private-key');
       if (!storedKey) throw new Error('No private key found in localStorage.');
 
+      // 1. Fetch exact price from contract
+      setStatus("⏳ 1/3: Fetching exact price from contract...");
+      const priceInTinybars = await getListingPrice(nftSerialNumber);
+      const payableAmount = Hbar.fromTinybars(priceInTinybars);
+
       // Setup client
+      setStatus("⏳ 2/3: Preparing transaction...");
       const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
       const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
       const userAccountId = AccountId.fromString(accountId);
@@ -312,11 +351,12 @@ function App() {
       const fundTx = new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
         .setGas(1000000)
-        .setPayableAmount(new Hbar(50)) // Set the payable amount for the transaction
+        .setPayableAmount(payableAmount) // Set the exact payable amount
         .setFunction("fundEscrow", new ContractFunctionParameters()
           .addUint256(nftSerialNumber)
         );
 
+      setStatus("⏳ 3/3: Executing purchase...");
       const frozenFundTx = await fundTx.freezeWith(userClient);
       const signedFundTx = await frozenFundTx.sign(userPrivateKey);
       const fundTxResponse = await signedFundTx.execute(userClient);
@@ -327,7 +367,7 @@ function App() {
       }
 
       setFlowState("FUNDED");
-      setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
+      setStatus(`✅ Escrow Funded! Paid ${payableAmount.toString()}. Ready for delivery confirmation.`);
 
     } catch (error) {
       console.error("Purchase failed:", error);

@@ -118,4 +118,8 @@ contract Escrow {
         emit ListingCanceled(tokenId); // Re-using this event for simplicity
         console.log("Funds for Token ID %s refunded to buyer %s", tokenId, msg.sender);
     }
+
+    function getListingPrice(uint256 serialNumber) external view returns (uint256) {
+        return listings[serialNumber].price;
+    }
 }
