@@ -340,6 +340,9 @@ function App() {
       const priceInTinybars = await getListingPrice(nftSerialNumber);
       const payableAmount = Hbar.fromTinybars(priceInTinybars);
 
+      console.log("DEBUG: Fetched price (tinybars):", priceInTinybars);
+      console.log("DEBUG: Payable amount (Hbar):", payableAmount.toString());
+
       // Setup client
       setStatus("⏳ 2/3: Preparing transaction...");
       const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;

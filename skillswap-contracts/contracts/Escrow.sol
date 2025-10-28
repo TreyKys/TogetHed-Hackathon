@@ -55,7 +55,12 @@ contract Escrow {
     function fundEscrow(uint256 tokenId) external payable {
         Listing storage listing = listings[tokenId];
         require(listing.state == ListingState.LISTED, "Escrow: Asset is not listed for sale.");
+
         uint256 paymentInTinybars = convertToTinybar(msg.value);
+        console.log("DEBUG: Received msg.value (weibars):", msg.value);
+        console.log("DEBUG: Converted payment (tinybars):", paymentInTinybars);
+        console.log("DEBUG: Expected price (tinybars):", listing.price);
+
         require(paymentInTinybars == listing.price, "Escrow: Incorrect payment amount.");
 
         listing.buyer = msg.sender;
