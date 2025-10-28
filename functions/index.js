@@ -51,13 +51,10 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       const rawAdminPrivateKey = hederaAdminPrivateKey.value();
 
       if (!adminAccountId || !rawAdminPrivateKey) {
-        throw new Error("Admin credentials are not set as secrets in this V2 function environment.");
+        throw new Error("Admin credentials are not set in the function environment.");
       }
-
       const adminPrivateKey = PrivateKey.fromStringECDSA(rawAdminPrivateKey);
-
-      const client = Client.forTestnet();
-      client.setOperator(adminAccountId, adminPrivateKey);
+      const client = Client.forTestnet().setOperator(adminAccountId, adminPrivateKey);
 
       // generate a new ECDSA private key and use it to create the Hedera account
       // NOTE: the SDK PrivateKey.generateECDSA() returns a key compatible for EVM aliasing
@@ -70,9 +67,9 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       // create the Hedera account with that public key
       const acctTx = new AccountCreateTransaction()
         .setKey(newPubKey)
-        .setInitialBalance(new Hbar(100)); // fund so user can transact
+        .setInitialBalance(new Hbar(10)); // fund so user can transact
 
-      const acctSubmit = await acctTx..execute(client);
+      const acctSubmit = await acctTx.execute(client);
       const acctReceipt = await acctSubmit.getReceipt(client);
       const newAccountId = acctReceipt.accountId;
       if (!newAccountId) {
@@ -88,7 +85,7 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       return response.status(200).send({
         accountId: newAccountId.toString(),
         privateKey: newPrivHex0x,
-        evmAddress: evmAddress
+        evmAddress
       });
 
     } catch (error) {

@@ -1,8 +1,10 @@
+import { ethers } from "ethers";
+
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
-export const escrowContractAddress = "0xf90B4515a1fa1bfF31F1760683772392025E257f";
+export const escrowContractAddress = "0x708522128Ff587Cd89F27B7B9883904a96e69b41";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
-export const assetTokenId = "0.0.7134449"; // The original, valid HTS token ID
-export const escrowContractAccountId = "0.0.7149623";
+export const assetTokenId = "0.0.7134449";
+export const escrowContractAccountId = "0.0.7140680";
 
 // --- 2. CONTRACT BLUEPRINTS (ABIs) ---
 export const escrowContractABI = [
@@ -155,25 +157,6 @@ export const escrowContractABI = [
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "serialNumber",
-        "type": "uint256"
-      }
-    ],
-    "name": "getListingPrice",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
       },
@@ -274,3 +257,30 @@ export const assetTokenContractABI = [
   {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"associate","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
+
+// --- 3. PROVIDER & CONTRACT FACTORIES ---
+export const getProvider = () => {
+    // Configure the provider for Hedera Testnet and disable ENS
+    return new ethers.JsonRpcProvider(
+        "https://testnet.hashio.io/api",
+        {
+            name: 'Hedera Testnet',
+            chainId: 296,
+            ensAddress: null,
+        }
+    );
+};
+
+export const getEscrowContract = (signerOrProvider) =>
+    new ethers.Contract(
+        escrowContractAddress,
+        escrowContractABI,
+        signerOrProvider || getProvider()
+    );
+
+export const getAssetTokenContract = (signerOrProvider) =>
+    new ethers.Contract(
+        assetTokenContractAddress,
+        assetTokenContractABI,
+        signerOrProvider || getProvider()
+    );

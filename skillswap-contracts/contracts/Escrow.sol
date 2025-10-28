@@ -35,6 +35,7 @@ contract Escrow {
     function listAsset(uint256 tokenId, uint256 priceInTinybars) external {
         IERC721 assetToken = IERC721(assetTokenAddress);
         require(assetToken.ownerOf(tokenId) == msg.sender, "Escrow: Only the owner can list the asset.");
+        require(assetToken.getApproved(tokenId) == address(this), "Escrow: Contract must be approved to transfer the asset.");
         require(priceInTinybars > 0, "Escrow: Price must be greater than zero.");
 
         listings[tokenId] = Listing({
@@ -55,13 +56,10 @@ contract Escrow {
     function fundEscrow(uint256 tokenId) external payable {
         Listing storage listing = listings[tokenId];
         require(listing.state == ListingState.LISTED, "Escrow: Asset is not listed for sale.");
-
         uint256 paymentInTinybars = convertToTinybar(msg.value);
-        console.log("DEBUG: Received msg.value (weibars):", msg.value);
-        console.log("DEBUG: Converted payment (tinybars):", paymentInTinybars);
-        console.log("DEBUG: Expected price (tinybars):", listing.price);
-
-        require(paymentInTinybars == listing.price, "Escrow: Incorrect payment amount.");
+        console.log("Payment received (tinybars):", paymentInTinybars);
+        console.log("Listing price (tinybars):", listing.price);
+        require(paymentInTinybars >= listing.price, "Escrow: Incorrect payment amount.");
 
         listing.buyer = msg.sender;
         listing.state = ListingState.FUNDED;
@@ -122,9 +120,5 @@ contract Escrow {
 
         emit ListingCanceled(tokenId); // Re-using this event for simplicity
         console.log("Funds for Token ID %s refunded to buyer %s", tokenId, msg.sender);
-    }
-
-    function getListingPrice(uint256 serialNumber) external view returns (uint256) {
-        return listings[serialNumber].price;
     }
 }
