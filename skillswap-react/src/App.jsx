@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { ethers } from 'ethers';
 import {
   PrivateKey,
   AccountId,
@@ -8,15 +7,15 @@ import {
   TokenAssociateTransaction,
   AccountAllowanceApproveTransaction,
   TokenId,
-  NftId
+  NftId,
+  ContractExecuteTransaction,
+  ContractFunctionParameters,
+  Hbar
 } from '@hashgraph/sdk';
 import {
-  getEscrowContract,
   escrowContractAddress,
   escrowContractAccountId,
   assetTokenId,
-  getProvider,
-  assetTokenContractAddress
 } from './hedera.js';
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
@@ -26,7 +25,6 @@ const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
 function App() {
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [signer, setSigner] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [evmAddress, setEvmAddress] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
@@ -48,14 +46,11 @@ function App() {
 
           const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
           // Use ethers directly for ECDSA key — do not convert via Hashgraph PrivateKey
-          const loadedSigner = new ethers.Wallet(normalizedKey, provider);
-          const loadedEvm = await loadedSigner.getAddress();
+          // We no longer need to create a signer, just load the account info
+          console.log("Wallet details found in localStorage. Restoring session.");
 
-          console.log("Signer correctly initialized on load with address:", loadedEvm);
-
-          setSigner(loadedSigner);
           setAccountId(storedAccountId);
-          setEvmAddress(storedEvmAddress || loadedEvm); // prefer storedEvmAddress but fallback to derived
+          setEvmAddress(storedEvmAddress);
           setStatus(`✅ Vault restored. Welcome back, ${storedAccountId}`);
 
         } catch (error) {
@@ -91,25 +86,14 @@ function App() {
       // ensure privateKey is 0x-prefixed
       const normalizedPriv = privateKey.startsWith("0x") ? privateKey : "0x" + privateKey;
 
-      // create ethers signer from the returned ECDSA private key
-      const provider = getProvider();
-      const newSigner = new ethers.Wallet(normalizedPriv, provider);
-
-      // derive address client-side and compare to backendEvm for sanity
-      const derivedEvm = await newSigner.getAddress();
-      if (backendEvm && backendEvm.toLowerCase() !== derivedEvm.toLowerCase()) {
-        console.warn("createVault: backend evm differs from derived evm:", backendEvm, derivedEvm);
-        // prefer derivedEvm as canonical
-      }
-
+      // The backend now returns the canonical EVM address.
       localStorage.setItem('integro-private-key', normalizedPriv);
       localStorage.setItem('integro-account-id', accountId);
-      localStorage.setItem('integro-evm-address', derivedEvm);
+      localStorage.setItem('integro-evm-address', backendEvm);
 
       // set states
-      setSigner(newSigner);
       setAccountId(accountId);
-      setEvmAddress(derivedEvm);
+      setEvmAddress(backendEvm);
 
 
       // Display credentials to user once for backup
@@ -117,7 +101,7 @@ function App() {
         `Vault Created Successfully!\n\nPlease back up these details securely:\n
         Account ID: ${accountId}\n
         Private Key: ${normalizedPriv}\n
-        EVM Address: ${derivedEvm}`
+        EVM Address: ${backendEvm}`
        );
 
       setStatus(`✅ Secure vault created! Your Account ID: ${accountId}`);
@@ -244,24 +228,6 @@ function App() {
       const storedKey = localStorage.getItem('integro-private-key');
       if (!storedKey) throw new Error('No private key found in localStorage.');
 
-      // If signer is null or mismatch, reconstruct it here
-      const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
-      let usedSigner = signer;
-      if (!usedSigner) {
-        console.warn("handleList: signer was null, reconstructing from localStorage");
-        usedSigner = new ethers.Wallet(normalizedKey, getProvider());
-        setSigner(usedSigner); // Update the state with the reconstructed signer
-      }
-
-      // Use reconstructed signer reference to be sure
-      const signerAddress = await usedSigner.getAddress();
-
-      if (signerAddress.toLowerCase() !== evmAddress.toLowerCase()) {
-        throw new Error(`CRITICAL: Signer address (${signerAddress}) does not match stored EVM address (${evmAddress})`);
-      }
-      console.log("handleList Checkpoint: Using verified Signer Address:", signerAddress);
-      setStatus(`Debug: handleList using signer ${signerAddress.slice(0, 8)}...`);
-
       // 1. SDK NFT Approval
       console.log("Step 1: SDK NFT Approval");
       setStatus("⏳ 1/3: Creating SDK client...");
@@ -298,24 +264,29 @@ function App() {
       console.log("SDK Approval successful!");
       setStatus("✅ SDK Approval Successful!");
 
-      // 2. Prepare Solidity Call Parameters
+      // 2. Prepare and Execute Contract Call
       console.log("Step 2: Preparing EVM call parameters");
       setStatus("⏳ 3/3: Preparing to list on marketplace...");
-      const serialBigInt = BigInt(nftSerialNumber);
-      const priceInTinybars = BigInt(50 * 1e8);
+      const priceInTinybars = 50 * 1e8; // 50 HBAR in tinybars
 
-      // 3. Call listAsset (Ethers.js) using the already verified signer
-      console.log("handleList Checkpoint: About to call listAsset with signer address:", await signer.getAddress());
+      const listAssetTx = new ContractExecuteTransaction()
+        .setContractId(escrowContractAccountId)
+        .setGas(1000000) // Adjust gas as needed
+        .setFunction("listAsset", new ContractFunctionParameters()
+          .addUint256(nftSerialNumber)
+          .addUint256(priceInTinybars)
+        );
 
-      const escrowContract = getEscrowContract(signer);
-      const listTxResponse = await escrowContract.listAsset(
-        serialBigInt,
-        priceInTinybars,
-        { gasLimit: 1000000 }
-      );
-      await listTxResponse.wait();
+      const frozenListTx = await listAssetTx.freezeWith(userClient);
+      const signedListTx = await frozenListTx.sign(userPrivateKey);
+      const listTxResponse = await signedListTx.execute(userClient);
+      const listReceipt = await listTxResponse.getReceipt(userClient);
 
-      // 4. Update State
+      if (listReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Native listAsset call failed: ${listReceipt.status.toString()}`);
+      }
+
+      // 3. Update State
       setFlowState("LISTED");
       setStatus(`✅ NFT Listed for 50 HBAR!`);
       console.log("Listing successful!");
@@ -330,21 +301,36 @@ function App() {
   };
 
   const handleBuy = async () => {
-    if (!signer || !nftSerialNumber) return alert("No item listed for sale.");
+    if (!accountId || !nftSerialNumber) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
     setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const priceInWeibars = ethers.parseEther("50");
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error('No private key found in localStorage.');
 
-      const fundTx = await userEscrowContract.fundEscrow(
-        nftSerialNumber,
-        {
-          value: priceInWeibars,
-          gasLimit: 1000000
-        }
-      );
-      await fundTx.wait();
+      // Setup client
+      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
+      const userAccountId = AccountId.fromString(accountId);
+      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      // Create and execute transaction
+      const fundTx = new ContractExecuteTransaction()
+        .setContractId(escrowContractAccountId)
+        .setGas(1000000)
+        .setPayableAmount(new Hbar(50)) // Set the payable amount for the transaction
+        .setFunction("fundEscrow", new ContractFunctionParameters()
+          .addUint256(nftSerialNumber)
+        );
+
+      const frozenFundTx = await fundTx.freezeWith(userClient);
+      const signedFundTx = await frozenFundTx.sign(userPrivateKey);
+      const fundTxResponse = await signedFundTx.execute(userClient);
+      const fundReceipt = await fundTxResponse.getReceipt(userClient);
+
+      if (fundReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Native fundEscrow call failed: ${fundReceipt.status.toString()}`);
+      }
 
       setFlowState("FUNDED");
       setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
@@ -358,18 +344,35 @@ function App() {
   };
 
   const handleConfirm = async () => {
-    if (!signer || !nftSerialNumber) return alert("No funded escrow to confirm.");
+    if (!accountId || !nftSerialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
     setStatus("🚀 Confirming Delivery...");
     try {
-      const userEscrowContract = getEscrowContract(signer);
-      const confirmTx = await userEscrowContract.confirmDelivery(
-        nftSerialNumber,
-        {
-          gasLimit: 1000000
-        }
-      );
-      await confirmTx.wait();
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error('No private key found in localStorage.');
+
+      // Setup client
+      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
+      const userAccountId = AccountId.fromString(accountId);
+      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      // Create and execute transaction
+      const confirmTx = new ContractExecuteTransaction()
+        .setContractId(escrowContractAccountId)
+        .setGas(1000000)
+        .setFunction("confirmDelivery", new ContractFunctionParameters()
+          .addUint256(nftSerialNumber)
+        );
+
+      const frozenConfirmTx = await confirmTx.freezeWith(userClient);
+      const signedConfirmTx = await frozenConfirmTx.sign(userPrivateKey);
+      const confirmTxResponse = await signedConfirmTx.execute(userClient);
+      const confirmReceipt = await confirmTxResponse.getReceipt(userClient);
+
+      if (confirmReceipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Native confirmDelivery call failed: ${confirmReceipt.status.toString()}`);
+      }
 
       setFlowState("SOLD");
       setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
@@ -433,7 +436,7 @@ function App() {
           </div>
         </div>
 
-        {signer ? renderLoggedInUI() : renderLoggedOutUI()}
+        {accountId ? renderLoggedInUI() : renderLoggedOutUI()}
 
       </div>
     </div>
