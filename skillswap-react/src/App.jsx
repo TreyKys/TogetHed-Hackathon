@@ -10,6 +10,7 @@ import {
   NftId,
   ContractExecuteTransaction,
   ContractFunctionParameters,
+  ContractCallQuery,
   Hbar
 } from '@hashgraph/sdk';
 import {
@@ -261,14 +262,19 @@ function App() {
       // 2. Prepare and Execute Contract Call
       console.log("Step 2: Preparing EVM call parameters");
       setStatus("⏳ 3/3: Preparing to list on marketplace...");
-      const priceInTinybars = 50 * 1e8; // 50 HBAR in tinybars
+
+      // The user enters the price in HBAR, and we convert it to the smallest unit (tinybars)
+      // The contract will treat this value as wei.
+      const priceInHbar = 50;
+      const priceInWei = Hbar.from(priceInHbar).toTinybars();
+      console.log(`Listing NFT for ${priceInHbar} HBAR, which is ${priceInWei.toString()} in the smallest unit (tinybars/wei).`);
 
       const listAssetTx = new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
         .setGas(1000000) // Adjust gas as needed
         .setFunction("listAsset", new ContractFunctionParameters()
           .addUint256(nftSerialNumber)
-          .addUint256(priceInTinybars)
+          .addUint256(priceInWei) // Pass the price in the native unit
         );
 
       const frozenListTx = await listAssetTx.freezeWith(userClient);
@@ -307,22 +313,48 @@ function App() {
       const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+      console.log("[handleBuy] Client created for buyer:", userAccountId.toString());
 
-      // Create and execute transaction
+      // 1. Get the exact listing price from the contract
+      console.log("[handleBuy] Step 1: Fetching listing price for serial #", nftSerialNumber);
+      const getPriceQuery = new ContractCallQuery()
+        .setContractId(escrowContractAccountId)
+        .setGas(100000) // Gas for a view function is typically low
+        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(nftSerialNumber));
+
+      const priceQueryResult = await getPriceQuery.execute(userClient);
+      const priceInWei = priceQueryResult.getUint256(0);
+      console.log(`[handleBuy] Contract returned price: ${priceInWei.toString()} in the smallest unit (tinybars/wei).`);
+
+      if (priceInWei.isZero()) {
+        throw new Error("Could not retrieve a valid price for this NFT. It may not be listed.");
+      }
+
+      const payableAmount = Hbar.fromTinybars(priceInWei);
+      console.log(`[handleBuy] Payable amount calculated: ${payableAmount.toString()}`);
+
+      // 2. Create and execute the funding transaction with the exact price
+      console.log("[handleBuy] Step 2: Building and sending the fundEscrow transaction...");
       const fundTx = new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
         .setGas(1000000)
-        .setPayableAmount(new Hbar(50)) // Set the payable amount for the transaction
+        .setPayableAmount(payableAmount)
         .setFunction("fundEscrow", new ContractFunctionParameters()
           .addUint256(nftSerialNumber)
         );
 
       const frozenFundTx = await fundTx.freezeWith(userClient);
       const signedFundTx = await frozenFundTx.sign(userPrivateKey);
+      console.log("[handleBuy] Transaction signed by buyer.");
       const fundTxResponse = await signedFundTx.execute(userClient);
+      console.log("[handleBuy] Transaction submitted. TX ID:", fundTxResponse.transactionId.toString());
+
+      console.log("[handleBuy] Awaiting transaction receipt...");
       const fundReceipt = await fundTxResponse.getReceipt(userClient);
+      console.log("[handleBuy] Receipt received. Status:", fundReceipt.status.toString());
 
       if (fundReceipt.status.toString() !== 'SUCCESS') {
+        console.error("[handleBuy] Full receipt:", JSON.stringify(fundReceipt, null, 2));
         throw new Error(`Native fundEscrow call failed: ${fundReceipt.status.toString()}`);
       }
 
@@ -350,8 +382,10 @@ function App() {
       const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+      console.log("[handleConfirm] Client created for buyer:", userAccountId.toString());
 
       // Create and execute transaction
+      console.log("[handleConfirm] Building and sending the confirmDelivery transaction for serial #", nftSerialNumber);
       const confirmTx = new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
         .setGas(1000000)
@@ -361,10 +395,17 @@ function App() {
 
       const frozenConfirmTx = await confirmTx.freezeWith(userClient);
       const signedConfirmTx = await frozenConfirmTx.sign(userPrivateKey);
+      console.log("[handleConfirm] Transaction signed by buyer.");
       const confirmTxResponse = await signedConfirmTx.execute(userClient);
+      console.log("[handleConfirm] Transaction submitted. TX ID:", confirmTxResponse.transactionId.toString());
+
+      console.log("[handleConfirm] Awaiting transaction receipt...");
       const confirmReceipt = await confirmTxResponse.getReceipt(userClient);
+      console.log("[handleConfirm] Receipt received. Status:", confirmReceipt.status.toString());
+
 
       if (confirmReceipt.status.toString() !== 'SUCCESS') {
+        console.error("[handleConfirm] Full receipt:", JSON.stringify(confirmReceipt, null, 2));
         throw new Error(`Native confirmDelivery call failed: ${confirmReceipt.status.toString()}`);
       }
 

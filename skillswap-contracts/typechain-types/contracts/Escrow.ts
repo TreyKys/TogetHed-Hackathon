@@ -30,6 +30,7 @@ export interface EscrowInterface extends Interface {
       | "cancelListing"
       | "confirmDelivery"
       | "fundEscrow"
+      | "getListingPrice"
       | "listAsset"
       | "listings"
       | "refundBuyer"
@@ -60,6 +61,10 @@ export interface EscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "getListingPrice",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "listAsset",
     values: [BigNumberish, BigNumberish]
   ): string;
@@ -85,6 +90,10 @@ export interface EscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "fundEscrow", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "getListingPrice",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "listAsset", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "listings", data: BytesLike): Result;
   decodeFunctionResult(
@@ -213,8 +222,14 @@ export interface Escrow extends BaseContract {
 
   fundEscrow: TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
 
+  getListingPrice: TypedContractMethod<
+    [tokenId: BigNumberish],
+    [bigint],
+    "view"
+  >;
+
   listAsset: TypedContractMethod<
-    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
+    [tokenId: BigNumberish, priceInWei: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -255,9 +270,12 @@ export interface Escrow extends BaseContract {
     nameOrSignature: "fundEscrow"
   ): TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
   getFunction(
+    nameOrSignature: "getListingPrice"
+  ): TypedContractMethod<[tokenId: BigNumberish], [bigint], "view">;
+  getFunction(
     nameOrSignature: "listAsset"
   ): TypedContractMethod<
-    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
+    [tokenId: BigNumberish, priceInWei: BigNumberish],
     [void],
     "nonpayable"
   >;
