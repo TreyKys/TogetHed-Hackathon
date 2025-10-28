@@ -167,12 +167,6 @@ function App() {
       return;
     }
 
-    // Verify we're using the correct token ID
-    if (assetTokenId !== "0.0.7134449") {
-      alert(`CRITICAL: Incorrect Token ID detected: ${assetTokenId}`);
-      return;
-    }
-
     setIsTransactionLoading(true);
     setStatus("🚀 Minting RWA NFT...");
 

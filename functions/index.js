@@ -70,9 +70,9 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       // create the Hedera account with that public key
       const acctTx = new AccountCreateTransaction()
         .setKey(newPubKey)
-        .setInitialBalance(new Hbar(10)); // fund so user can transact
+        .setInitialBalance(new Hbar(100)); // fund so user can transact
 
-      const acctSubmit = await acctTx.execute(client);
+      const acctSubmit = await acctTx..execute(client);
       const acctReceipt = await acctSubmit.getReceipt(client);
       const newAccountId = acctReceipt.accountId;
       if (!newAccountId) {

@@ -1,8 +1,8 @@
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
-export const escrowContractAddress = "0x582EA06E7d3e0471C8Bdaf3cC055Aee62B6300E5";
+export const escrowContractAddress = "0x976391eb5DEe9e31D61812F305d65a1726fcB921";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
 export const assetTokenId = "0.0.7134449"; // The original, valid HTS token ID
-export const escrowContractAccountId = "0.0.7148680";
+export const escrowContractAccountId = "0.0.7148712";
 
 // --- 2. CONTRACT BLUEPRINTS (ABIs) ---
 export const escrowContractABI = [
