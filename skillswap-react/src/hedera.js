@@ -1,5 +1,3 @@
-import { ethers } from "ethers";
-
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
 export const escrowContractAddress = "0x708522128Ff587Cd89F27B7B9883904a96e69b41";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
@@ -58,30 +56,3 @@ export const assetTokenContractABI = [
   {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"associate","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
-
-// --- 3. PROVIDER & CONTRACT FACTORIES ---
-export const getProvider = () => {
-    // Configure the provider for Hedera Testnet and disable ENS
-    return new ethers.JsonRpcProvider(
-        "https://testnet.hashio.io/api",
-        {
-            name: 'Hedera Testnet',
-            chainId: 296,
-            ensAddress: null,
-        }
-    );
-};
-
-export const getEscrowContract = (signerOrProvider) =>
-    new ethers.Contract(
-        escrowContractAddress,
-        escrowContractABI,
-        signerOrProvider || getProvider()
-    );
-
-export const getAssetTokenContract = (signerOrProvider) =>
-    new ethers.Contract(
-        assetTokenContractAddress,
-        assetTokenContractABI,
-        signerOrProvider || getProvider()
-    );
