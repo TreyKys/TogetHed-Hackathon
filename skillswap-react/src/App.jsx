@@ -102,7 +102,7 @@ function App() {
   // --- Token Association Function ---
   const handleTokenAssociation = async (accountId, privateKey) => {
     try {
-      const userPrivateKey = PrivateKey.fromString(privateKey);
+      const userPrivateKey = PrivateKey.fromStringECDSA(privateKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
@@ -188,7 +188,7 @@ function App() {
       if (!storedKey || !storedAccountId) throw new Error('Vault credentials not found.');
       if (!assetTokenIdState || nftSerialNumber == null) throw new Error('NFT data not found in state.');
 
-      const userPrivateKey = PrivateKey.fromString(storedKey);
+      const userPrivateKey = PrivateKey.fromStringECDSA(storedKey);
       const userAccountId = AccountId.fromString(storedAccountId);
       const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
@@ -250,7 +250,7 @@ function App() {
         const storedAccountId = localStorage.getItem('integro-account-id');
         if (!storedKey || !storedAccountId) throw new Error('Vault credentials not found.');
 
-        const userPrivateKey = PrivateKey.fromString(storedKey);
+        const userPrivateKey = PrivateKey.fromStringECDSA(storedKey);
         const userAccountId = AccountId.fromString(storedAccountId);
         const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
@@ -292,7 +292,7 @@ function App() {
         const storedAccountId = localStorage.getItem('integro-account-id');
         if (!storedKey || !storedAccountId) throw new Error('Vault credentials not found.');
 
-        const userPrivateKey = PrivateKey.fromString(storedKey);
+        const userPrivateKey = PrivateKey.fromStringECDSA(storedKey);
         const userAccountId = AccountId.fromString(storedAccountId);
         const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
