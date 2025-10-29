@@ -1,0 +1,122 @@
+/* src/components/Layout.css */
+
+.main-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    background-color: #1a202c; /* Dark background */
+    color: white;
+    font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.logo h2 {
+    margin: 0;
+    font-weight: 700;
+}
+
+.search-bar {
+    flex-grow: 1;
+    margin: 0 2rem;
+}
+
+.search-bar input {
+    width: 100%;
+    max-width: 400px;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 20px;
+    background-color: #2d3748;
+    color: white;
+    font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.search-bar input::placeholder {
+    color: #a0aec0;
+}
+
+.menu-icon {
+    cursor: pointer;
+}
+
+/* Sidebar Styles */
+.sidebar {
+    height: 100%;
+    width: 280px;
+    position: fixed;
+    top: 0;
+    left: -280px; /* Hidden by default */
+    background-color: #1a202c;
+    padding: 1rem;
+    transition: left 0.3s ease-in-out;
+    z-index: 1000;
+    color: white;
+    font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.sidebar.open {
+    left: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #4a5568;
+    padding-bottom: 1rem;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 2rem;
+    cursor: pointer;
+}
+
+.sidebar-nav ul {
+    list-style-type: none;
+    padding: 0;
+    margin-top: 2rem;
+}
+
+.sidebar-nav li a {
+    display: flex;
+    align-items: center;
+    padding: 1rem 0;
+    color: #a0aec0;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.sidebar-nav li a svg {
+    margin-right: 1rem;
+    transition: transform 0.2s;
+}
+
+.sidebar-nav li a:hover svg {
+    transform: scale(1.1);
+}
+
+.sidebar-nav li a:hover {
+    color: white;
+}
+
+.sidebar-footer {
+    position: absolute;
+    bottom: 20px;
+    font-weight: bold;
+    font-size: 0.9rem;
+    color: #a0aec0;
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+}

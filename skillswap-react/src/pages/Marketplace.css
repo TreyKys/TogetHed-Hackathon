@@ -1,0 +1,35 @@
+/* src/pages/Marketplace.css */
+
+.marketplace-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.marketplace-content {
+    padding: 2rem;
+    overflow-y: auto;
+}
+
+.tabs {
+    display: flex;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 2rem;
+}
+
+.tab {
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+.tab.active {
+    color: #2c5282;
+    border-bottom-color: #2c5282;
+}
+
+.tab-content {
+    /* Styles for the content of each tab */
+}
