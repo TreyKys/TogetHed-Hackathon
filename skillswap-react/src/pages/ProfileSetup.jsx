@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
 // We can create a separate CSS file for this component later if needed.
 
-const setUserProfileUrl = "https://setuserprofile-cehqwvb4aq-uc.a.run.app"; // Placeholder URL
+const setUserProfileUrl = "https://us-central1-integro-ecosystem.cloudfunctions.net/setUserProfile";
 
 const ProfileSetup = () => {
     const navigate = useNavigate();

@@ -1,5 +1,6 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require('firebase-functions/params');
+const admin = require("firebase-admin");
 const {
   Client,
   PrivateKey,
@@ -13,6 +14,9 @@ const {
 const cors = require("cors")({ origin: true });
 const ethers = require("ethers");
 
+// Initialize Firebase Admin SDK
+admin.initializeApp();
+
 // Define secrets
 const hederaAdminAccountId = defineSecret('HEDERA_ADMIN_ACCOUNT_ID');
 const hederaAdminPrivateKey = defineSecret('HEDERA_ADMIN_PRIVATE_KEY');
@@ -21,7 +25,6 @@ const hederaAdminSupplyKey =
 
 // --- Configuration ---
 const assetTokenContractId = "0.0.7134449";
-const assetTokenABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[{"internalType":"address","name":"sender","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"},{"internalType":"address","name":"owner","type":"address"}],"name":"ERC721IncorrectOwner","type":"error"},{"inputs":[{"internalType":"address","name":"operator","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"ERC721InsufficientApproval","type":"error"},{"inputs":[{"internalType":"address","name":"approver","type":"address"}],"name":"ERC721InvalidApprover","type":"error"},{"inputs":[{"internalType":"address","name":"operator","type":"address"}],"name":"ERC721InvalidOperator","type":"error"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"ERC721InvalidOwner","type":"error"},{"inputs":[{"internalType":"address","name":"receiver","type":"address"}],"name":"ERC721InvalidReceiver","type":"error"},{"inputs":[{"internalType":"address","name":"sender","type":"address"}],"name":"ERC721InvalidSender","type":"error"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"ERC721NonexistentToken","type":"error"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"OwnableInvalidOwner","type":"error"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"OwnableUnauthorizedAccount","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"approved","type":"address"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"operator","type":"address"},{"indexed":false,"internalType":"bool","name":"approved","type":"bool"}],"name":"ApprovalForAll","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"approve","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"assetData","outputs":[{"internalType":"string","name":"assetType","type":"string"},{"internalType":"string","name":"quality","type":"string"},{"internalType":"string","name":"location","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"getApproved","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"getAssetData","outputs":[{"components":[{"internalType":"string","name":"assetType","type":"string"},{"internalType":"string","name":"quality","type":"string"},{"internalType":"string","name":"location","type":"string"}],"internalType":"struct AssetToken.AssetData","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"operator","type":"address"}],"name":"isApprovedForAll","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"ownerOf","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"string","name":"assetType","type":"string"},{"internalType":"string","name":"quality","type":"string"},{"internalType":"string","name":"location","type":"string"}],"name":"safeMint","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"safeTransferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"},{"internalType":"bytes","name":"data","type":"bytes"}],"name":"safeTransferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"operator","type":"address"},{"internalType":"bool","name":"approved","type":"bool"}],"name":"setApprovalForAll","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes4","name":"interfaceId","type":"bytes4"}],"name":"supportsInterface","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"tokenURI","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"transferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"associate","outputs":[],"stateMutability":"nonpayable","type":"function"}];
 
 // Utility: Validate EVM address (no ENS, no malformed)
 function isValidEvmAddress(address) {
@@ -59,20 +62,17 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       const client = Client.forTestnet();
       client.setOperator(adminAccountId, adminPrivateKey);
 
-      // generate a new ECDSA private key and use it to create the Hedera account
-      // NOTE: the SDK PrivateKey.generateECDSA() returns a key compatible for EVM aliasing
       const newPriv = PrivateKey.generateECDSA();
-      const newPrivHex0x = "0x" + newPriv.toStringRaw(); // 0x-prefixed hex for ethers
+      const newPrivHex0x = "0x" + newPriv.toStringRaw();
       const newPubKey = newPriv.publicKey;
 
       console.log("createAccount: generated ECDSA privateKey (hex):", newPrivHex0x);
 
-      // create the Hedera account with that public key
       const acctTx = new AccountCreateTransaction()
         .setKey(newPubKey)
-        .setInitialBalance(new Hbar(100)); // fund so user can transact
+        .setInitialBalance(new Hbar(65));
 
-      const acctSubmit = await acctTx..execute(client);
+      const acctSubmit = await acctTx.execute(client);
       const acctReceipt = await acctSubmit.getReceipt(client);
       const newAccountId = acctReceipt.accountId;
       if (!newAccountId) {
@@ -80,11 +80,9 @@ exports.createAccount = onRequest({ secrets: [hederaAdminAccountId, hederaAdminP
       }
       console.log("createAccount: created accountId:", newAccountId.toString());
 
-      // Derive the EVM address from the ECDSA private key (ethers)
       const evmAddress = (new ethers.Wallet(newPrivHex0x)).address;
       console.log("createAccount: derived evmAddress (from ECDSA key):", evmAddress);
 
-      // Return accountId, privateKey (0x hex), and evmAddress
       return response.status(200).send({
         accountId: newAccountId.toString(),
         privateKey: newPrivHex0x,
@@ -124,7 +122,6 @@ exports.mintRWAviaUSSD = onRequest({
 
       const client = Client.forTestnet().setOperator(adminId, adminPrivateKey);
 
-      // --- Minting Logic ---
       const metadata = Buffer.from(JSON.stringify({ assetType, quality, location }));
       if (metadata.length > 100) {
         throw new Error("Metadata exceeds 100 bytes limit.");
@@ -133,9 +130,8 @@ exports.mintRWAviaUSSD = onRequest({
       const mintTx = await new TokenMintTransaction()
         .setTokenId(assetTokenContractId)
         .setMetadata([metadata])
-        .freezeWith(client); // Freeze first
+        .freezeWith(client);
 
-      // Sign with supply key
       const signedMintTx = await mintTx.sign(supplyPrivateKey);
       const mintTxSubmit = await signedMintTx.execute(client);
       const mintRx = await mintTxSubmit.getReceipt(client);
@@ -144,10 +140,8 @@ exports.mintRWAviaUSSD = onRequest({
         throw new Error("Minting succeeded but no serial number was returned.");
       }
 
-      // Correct serial number extraction
       const serialNumber = Number(mintRx.serials[0].toString());
 
-      // --- Transfer Logic ---
       const transferTx = await new TransferTransaction()
         .addNftTransfer(assetTokenContractId, serialNumber, adminId, accountId)
         .freezeWith(client)
@@ -166,7 +160,6 @@ exports.mintRWAviaUSSD = onRequest({
       });
 
     } catch (error) {
-      // Enhanced error handling
       if (error.message && error.message.includes("ACCOUNT_KYC_NOT_GRANTED_FOR_TOKEN")) {
         return response.status(400).send({ error: "User account must be KYC'd and associated with the token before minting." });
       }
@@ -187,6 +180,39 @@ exports.mintRWAviaUSSD = onRequest({
         return response.status(400).send({ error: "Insufficient transaction fee. Try increasing the gas limit or check your account balance." });
       }
       console.error("ERROR minting RWA via USSD:", error);
+      return response.status(500).send({ error: error.message });
+    }
+  });
+});
+
+// --- NEW FUNCTION ---
+exports.setUserProfile = onRequest((request, response) => {
+  cors(request, response, async () => {
+    if (request.method !== "POST") {
+      return response.status(405).send("Method Not Allowed");
+    }
+
+    try {
+      const { accountId, displayName, role, location } = request.body;
+      if (!accountId || !displayName || !role || !location) {
+        return response.status(400).send({ error: "Missing required profile fields." });
+      }
+
+      const db = admin.firestore();
+      const profileRef = db.collection("profiles").doc(accountId);
+
+      await profileRef.set({
+        displayName,
+        role,
+        location,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`SUCCESS: Profile created/updated for account ${accountId}`);
+      return response.status(200).send({ success: true, message: "Profile saved." });
+
+    } catch (error) {
+      console.error("ERROR in setUserProfile function:", error);
       return response.status(500).send({ error: error.message });
     }
   });
