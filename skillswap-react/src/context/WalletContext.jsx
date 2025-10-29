@@ -28,7 +28,6 @@ export const WalletProvider = ({ children }) => {
   const [privateKey, setPrivateKey] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false); // To track if we've checked localStorage
   const [flowState, setFlowState] = useState('INITIAL');
-  const [assetTokenIdState, setAssetTokenIdState] = useState(null);
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
 
   // On component mount, try to load the wallet from localStorage
@@ -112,24 +111,36 @@ export const WalletProvider = ({ children }) => {
     });
 
     const data = await response.json();
+    console.log("handleMint: Received data from backend:", data);
     if (!response.ok) {
+      console.error("Backend minting request failed. Raw response:", data);
       throw new Error(data.error || 'Backend minting request failed.');
     }
 
-    const { tokenId: receivedTokenId, serialNumber } = data;
-    setAssetTokenIdState(receivedTokenId);
+    const { serialNumber } = data;
     setNftSerialNumber(serialNumber);
     setFlowState('MINTED');
     return serialNumber;
   };
 
   const handleList = async (price) => {
+    // --- Defensive Programming: Check for null values ---
+    if (!assetTokenId) {
+      console.error("handleList Error: assetTokenId is not set. Please check hedera.js");
+      throw new Error("Configuration error: assetTokenId is missing.");
+    }
+    if (nftSerialNumber === null || nftSerialNumber === undefined) {
+      console.error("handleList Error: nftSerialNumber is not set. Minting may have failed.");
+      throw new Error("State error: nftSerialNumber is missing.");
+    }
+    console.log(`handleList: Listing NFT ${assetTokenId} - Serial: ${nftSerialNumber} for price: ${price}`);
+
     const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
     const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
     const userAccountId = AccountId.fromString(accountId);
     const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
-    const tokenIdObj = TokenId.fromString(assetTokenIdState);
+    const tokenIdObj = TokenId.fromString(assetTokenId);
     const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
 
     const allowanceTx = new AccountAllowanceApproveTransaction()
@@ -164,7 +175,6 @@ export const WalletProvider = ({ children }) => {
     privateKey,
     isLoaded,
     flowState,
-    assetTokenIdState,
     nftSerialNumber,
     createVault,
     logout,
