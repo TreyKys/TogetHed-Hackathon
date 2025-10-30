@@ -98,6 +98,10 @@ export const WalletProvider = ({ children }) => {
     await fetchUserProfile();
   };
 
+  const setProfile = (profileData) => {
+    setUserProfile(profileData);
+  };
+
   // This function will be called by the onboarding flow to set the new vault details
   const createVault = (newAccountId, newPrivateKey, newEvmAddress) => {
     console.log("WalletContext: createVault called with", newAccountId);
@@ -412,6 +416,7 @@ export const WalletProvider = ({ children }) => {
     createVault,
     logout,
     refreshUserProfile,
+    setProfile,
     handleTokenAssociation,
     handleMint,
     handleList,

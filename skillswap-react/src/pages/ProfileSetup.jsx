@@ -8,7 +8,7 @@ const setUserProfileUrl = "https://us-central1-integro-ecosystem.cloudfunctions.
 
 const ProfileSetup = () => {
     const navigate = useNavigate();
-    const { accountId, refreshUserProfile } = useWallet();
+    const { accountId, setProfile } = useWallet();
     const [displayName, setDisplayName] = useState('');
     const [role, setRole] = useState('');
     const [location, setLocation] = useState('');
@@ -37,14 +37,11 @@ const ProfileSetup = () => {
                 throw new Error(errorData.error || 'Failed to save profile.');
             }
 
-            setStatus('✅ Profile saved successfully! Redirecting...');
-            await refreshUserProfile(); // Explicitly refresh the profile state
+            const profileData = { displayName, role, location };
+            setProfile(profileData);
 
-            // Wait a moment for the state to propagate before navigating
-            setTimeout(() => {
-                navigate('/marketplace');
-            }, 1000);
-
+            setStatus('✅ Profile saved successfully!');
+            navigate('/marketplace');
         } catch (error) {
             console.error('Profile setup failed:', error);
             setStatus(`❌ Error: ${error.message}`);
