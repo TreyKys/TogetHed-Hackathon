@@ -1,3 +1,5 @@
+import { Buffer } from 'buffer';
+globalThis.Buffer = Buffer;
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import {
   PrivateKey,

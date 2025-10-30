@@ -5,7 +5,6 @@ import Marketplace from './pages/Marketplace.jsx';
 import './App.css';
 
 import LandingPage from './pages/LandingPage.jsx';
-import ProfileSetup from './pages/ProfileSetup.jsx';
 import CreateListing from './pages/CreateListing.jsx';
 import MyAssets from './pages/MyAssets.jsx';
 import LendingPool from './pages/LendingPool.jsx';
@@ -39,20 +38,8 @@ function AppContent() {
       <Route path="/" element={!accountId ? <LandingPage /> : <Navigate to="/marketplace" />} />
       <Route
         path="/*"
-        element={
-          accountId ? (
-            userProfile ? (
-              <ProtectedRoutes />
-            ) : (
-              <Navigate to="/profile-setup" />
-            )
-          ) : (
-            <Navigate to="/" />
-          )
-        }
+        element={accountId ? <ProtectedRoutes /> : <Navigate to="/" />}
       />
-      {/* Public route for profile setup */}
-      <Route path="/profile-setup" element={<ProfileSetup />} />
     </Routes>
   );
 }

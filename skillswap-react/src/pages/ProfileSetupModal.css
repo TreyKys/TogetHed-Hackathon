@@ -1,7 +1,20 @@
-.profile-setup-container {
+.profile-setup-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.profile-setup-modal-content {
     font-family: 'Bricolage Grotesque', sans-serif;
+    width: 90%;
     max-width: 500px;
-    margin: 50px auto;
     padding: 2rem;
     background-color: #1e1e1e;
     color: #f0f0f0;
@@ -9,29 +22,29 @@
     text-align: center;
 }
 
-.profile-setup-container h2 {
+.profile-setup-modal-content h2 {
     margin-bottom: 0.5rem;
     color: #fff;
 }
 
-.profile-setup-container p {
+.profile-setup-modal-content p {
     margin-bottom: 2rem;
     color: #a0a0a0;
 }
 
-.profile-setup-container form div {
+.profile-setup-modal-content form div {
     margin-bottom: 1.5rem;
     text-align: left;
 }
 
-.profile-setup-container label {
+.profile-setup-modal-content label {
     display: block;
     margin-bottom: 8px;
     color: #ccc;
 }
 
-.profile-setup-container input,
-.profile-setup-container select {
+.profile-setup-modal-content input,
+.profile-setup-modal-content select {
     width: 100%;
     padding: 12px;
     border-radius: 5px;
@@ -41,7 +54,7 @@
     box-sizing: border-box; /* Important for padding to be included in width */
 }
 
-.profile-setup-container button[type="submit"] {
+.profile-setup-modal-content button[type="submit"] {
     width: 100%;
     padding: 15px;
     background-color: #2DD87F;
@@ -51,23 +64,23 @@
     cursor: pointer;
     font-size: 16px;
     font-weight: bold;
-    transition: background-color 0.2s ease;
+    transition: background-color: 0.2s ease;
 }
 
-.profile-setup-container button[type="submit"]:disabled {
+.profile-setup-modal-content button[type="submit"]:disabled {
     background-color: #555;
     cursor: not-allowed;
 }
 
-.profile-setup-container button[type="submit"]:hover:not(:disabled) {
+.profile-setup-modal-content button[type="submit"]:hover:not(:disabled) {
     background-color: #28b86b;
 }
 
-.profile-setup-container .status-message {
+.profile-setup-modal-content .status-message {
     margin-top: 1rem;
     color: #2DD87F;
 }
 
-.profile-setup-container .status-message.error {
+.profile-setup-modal-content .status-message.error {
     color: #ff4d4d;
 }

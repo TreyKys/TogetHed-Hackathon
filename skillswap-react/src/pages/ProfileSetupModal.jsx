@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
-import BackButton from '../components/BackButton.jsx';
-import './ProfileSetup.css';
+import './ProfileSetupModal.css';
 
 const setUserProfileUrl = "https://us-central1-integro-ecosystem.cloudfunctions.net/setUserProfile";
 
-const ProfileSetup = () => {
-    const navigate = useNavigate();
-    const { accountId, refreshUserProfile } = useWallet();
+const ProfileSetupModal = ({ onProfileComplete }) => {
+    const { accountId, setProfile } = useWallet();
     const [displayName, setDisplayName] = useState('');
     const [role, setRole] = useState('');
     const [location, setLocation] = useState('');
@@ -37,14 +34,11 @@ const ProfileSetup = () => {
                 throw new Error(errorData.error || 'Failed to save profile.');
             }
 
-            setStatus('✅ Profile saved successfully! Redirecting...');
-            await refreshUserProfile(); // Explicitly refresh the profile state
+            const profileData = { displayName, role, location };
+            setProfile(profileData);
 
-            // Wait a moment for the state to propagate before navigating
-            setTimeout(() => {
-                navigate('/marketplace');
-            }, 1000);
-
+            setStatus('✅ Profile saved successfully!');
+            onProfileComplete();
         } catch (error) {
             console.error('Profile setup failed:', error);
             setStatus(`❌ Error: ${error.message}`);
@@ -54,13 +48,13 @@ const ProfileSetup = () => {
     };
 
     return (
-        <div className="profile-setup-container">
-            <BackButton />
-            <h2>Set Up Your Profile</h2>
-            <p>Your secure vault is created. Now, let's set up your public profile.</p>
+        <div className="profile-setup-modal-overlay">
+            <div className="profile-setup-modal-content">
+                <h2>Set Up Your Profile</h2>
+                <p>Welcome to Integro! Let's get your profile ready for the marketplace.</p>
 
-            <form onSubmit={handleSaveProfile}>
-                <div>
+                <form onSubmit={handleSaveProfile}>
+                    <div>
                     <label htmlFor="displayName">Display Name</label>
                     <input
                         type="text"
@@ -100,8 +94,9 @@ const ProfileSetup = () => {
                 </button>
             </form>
             {status && <p className={`status-message ${status.includes('❌') ? 'error' : ''}`}>{status}</p>}
+            </div>
         </div>
     );
 };
 
-export default ProfileSetup;
+export default ProfileSetupModal;

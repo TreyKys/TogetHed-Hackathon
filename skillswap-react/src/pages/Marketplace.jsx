@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
 import { db, collection, onSnapshot } from '../firebase';
+import ProfileSetupModal from './ProfileSetupModal.jsx';
 import { doc, updateDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import Toast from '../components/Toast.jsx';
@@ -20,9 +21,10 @@ import {
 import { escrowContractAccountId } from '../hedera.js';
 
 function Marketplace() {
-  const { accountId, privateKey, setFlowState } = useWallet();
+  const { accountId, privateKey, userProfile, setFlowState } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState('Goods & Produce');
   const [toast, setToast] = useState({ show: false, message: '', txHash: '' });
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,6 +42,17 @@ function Marketplace() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    // Show the profile modal if the user is loaded and doesn't have a profile
+    if (userProfile === null) {
+      setShowProfileModal(true);
+    }
+  }, [userProfile]);
+
+  const handleProfileComplete = () => {
+    setShowProfileModal(false);
+  };
 
   const handleBuyClick = async (listing) => {
     try {
@@ -119,6 +132,7 @@ function Marketplace() {
 
   return (
     <div className="marketplace-container">
+      {showProfileModal && <ProfileSetupModal onProfileComplete={handleProfileComplete} />}
       {toast.show && <Toast message={toast.message} txHash={toast.txHash} onClose={() => setToast({ show: false, message: '', txHash: '' })} />}
       {selectedListing && (
         <ConfirmationModal
