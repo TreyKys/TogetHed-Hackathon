@@ -33,6 +33,19 @@ export const WalletProvider = ({ children }) => {
   const [flowState, setFlowState] = useState('INITIAL');
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
 
+  const fetchBalance = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const client = Client.forTestnet();
+      const query = new AccountBalanceQuery().setAccountId(id);
+      const accountBalance = await query.execute(client);
+      setHbarBalance(accountBalance.hbars.toString());
+    } catch (error) {
+      console.error("Failed to fetch HBAR balance:", error);
+      setHbarBalance("Error");
+    }
+  }, []);
+
   // On component mount, try to load the wallet from localStorage
   useEffect(() => {
     const storedKey = localStorage.getItem('integro-private-key');
@@ -58,19 +71,6 @@ export const WalletProvider = ({ children }) => {
       return () => clearInterval(interval);
     }
   }, [accountId, fetchBalance]);
-
-  const fetchBalance = useCallback(async (id) => {
-    if (!id) return;
-    try {
-      const client = Client.forTestnet();
-      const query = new AccountBalanceQuery().setAccountId(id);
-      const accountBalance = await query.execute(client);
-      setHbarBalance(accountBalance.hbars.toString());
-    } catch (error) {
-      console.error("Failed to fetch HBAR balance:", error);
-      setHbarBalance("Error");
-    }
-  }, []);
 
   // This function will be called by the onboarding flow to set the new vault details
   const createVault = (newAccountId, newPrivateKey, newEvmAddress) => {
