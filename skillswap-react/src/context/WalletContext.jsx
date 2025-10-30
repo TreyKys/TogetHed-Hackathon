@@ -9,8 +9,10 @@ import {
   NftId,
   ContractExecuteTransaction,
   ContractFunctionParameters,
-  Hbar
+  Hbar,
+  AccountBalanceQuery
 } from '@hashgraph/sdk';
+import { db, collection, addDoc, Timestamp } from '../firebase';
 import {
   escrowContractAccountId,
   assetTokenId,
@@ -26,7 +28,8 @@ export const WalletProvider = ({ children }) => {
   const [accountId, setAccountId] = useState(null);
   const [evmAddress, setEvmAddress] = useState(null);
   const [privateKey, setPrivateKey] = useState(null);
-  const [isLoaded, setIsLoaded] = useState(false); // To track if we've checked localStorage
+  const [hbarBalance, setHbarBalance] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [flowState, setFlowState] = useState('INITIAL');
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
 
@@ -41,8 +44,32 @@ export const WalletProvider = ({ children }) => {
       setPrivateKey(storedKey);
       setAccountId(storedAccountId);
       setEvmAddress(storedEvmAddress);
+      fetchBalance(storedAccountId);
     }
-    setIsLoaded(true); // Mark as loaded even if no wallet was found
+    setIsLoaded(true);
+  }, [fetchBalance]);
+
+  useEffect(() => {
+    if (accountId) {
+      const interval = setInterval(() => {
+        fetchBalance(accountId);
+      }, 30000); // Refresh every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [accountId, fetchBalance]);
+
+  const fetchBalance = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const client = Client.forTestnet();
+      const query = new AccountBalanceQuery().setAccountId(id);
+      const accountBalance = await query.execute(client);
+      setHbarBalance(accountBalance.hbars.toString());
+    } catch (error) {
+      console.error("Failed to fetch HBAR balance:", error);
+      setHbarBalance("Error");
+    }
   }, []);
 
   // This function will be called by the onboarding flow to set the new vault details
@@ -123,7 +150,53 @@ export const WalletProvider = ({ children }) => {
     return serialNumber;
   };
 
-  const handleList = async (price) => {
+  const handleMintAndList = async (listingData) => {
+    await handleTokenAssociation();
+
+    const { name, description, price, category, imageUrl } = listingData;
+
+    // 1. Mint the NFT via backend
+    const mintResponse = await fetch(mintRwaViaUssdUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accountId: accountId,
+        assetType: name,
+        quality: "N/A",
+        location: "N/A",
+      }),
+    });
+
+    const mintData = await mintResponse.json();
+    if (!mintResponse.ok) {
+      throw new Error(mintData.error || 'Backend minting request failed.');
+    }
+    const { serialNumber } = mintData;
+    setNftSerialNumber(serialNumber); // Set serial number for handleList
+    setFlowState('MINTED');
+
+    // 2. List on-chain
+    await handleList(price, serialNumber);
+
+    // 3. Save to Firestore
+    await addDoc(collection(db, "listings"), {
+      tokenId: assetTokenId,
+      serialNumber: Number(serialNumber),
+      name,
+      description,
+      price: Hbar.from(price).toTinybars().toString(),
+      category,
+      sellerAccountId: accountId,
+      sellerEvmAddress: evmAddress,
+      imageUrl,
+      createdAt: Timestamp.now(),
+    });
+
+    return { serialNumber };
+  };
+
+  const handleList = async (price, serialToUse) => {
+    const currentSerial = serialToUse || nftSerialNumber;
     // --- Defensive Programming: Check for null values ---
     if (!assetTokenId) {
       console.error("handleList Error: assetTokenId is not set. Please check hedera.js");
@@ -133,7 +206,7 @@ export const WalletProvider = ({ children }) => {
       console.error("handleList Error: nftSerialNumber is not set. Minting may have failed.");
       throw new Error("State error: nftSerialNumber is missing.");
     }
-    console.log(`handleList: Listing NFT ${assetTokenId} - Serial: ${nftSerialNumber} for price: ${price}`);
+    console.log(`handleList: Listing NFT ${assetTokenId} - Serial: ${currentSerial} for price: ${price}`);
 
     const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
     const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
@@ -173,6 +246,7 @@ export const WalletProvider = ({ children }) => {
     accountId,
     evmAddress,
     privateKey,
+    hbarBalance,
     isLoaded,
     flowState,
     nftSerialNumber,
@@ -180,7 +254,8 @@ export const WalletProvider = ({ children }) => {
     logout,
     handleTokenAssociation,
     handleMint,
-    handleList
+    handleList,
+    handleMintAndList
   };
 
   return (

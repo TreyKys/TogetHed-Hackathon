@@ -1,35 +1,34 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
-// We can create a separate CSS file for this component later if needed.
+import BackButton from '../components/BackButton.jsx';
+import './CreateListing.css';
 
 const CreateListing = () => {
+    const { handleMintAndList } = useWallet();
     const navigate = useNavigate();
-    const { handleMint, handleList } = useWallet();
-    const [assetType, setAssetType] = useState('');
-    const [quality, setQuality] = useState('');
-    const [location, setLocation] = useState('');
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
     const [price, setPrice] = useState('');
-    const [status, setStatus] = useState('');
+    const [category, setCategory] = useState('Goods & Produce');
+    const [imageUrl, setImageUrl] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [status, setStatus] = useState('');
 
-    const handleCreateListing = async (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!name || !description || !price || !category || !imageUrl) {
+            setStatus('Please fill out all fields.');
+            return;
+        }
         setIsProcessing(true);
-        setStatus('Creating and listing your asset...');
-
+        setStatus('Minting and listing your asset...');
         try {
-            setStatus('1/2: Minting your asset...');
-            await handleMint(assetType, quality, location);
-
-            setStatus('2/2: Listing your asset...');
-            await handleList(price);
-
+            await handleMintAndList({ name, description, price: parseFloat(price), category, imageUrl });
             setStatus('✅ Asset listed successfully!');
-            navigate('/marketplace');
-
+            setTimeout(() => navigate('/marketplace'), 2000);
         } catch (error) {
-            console.error('Failed to create listing:', error);
+            console.error('Failed to mint and list:', error);
             setStatus(`❌ Error: ${error.message}`);
         } finally {
             setIsProcessing(false);
@@ -37,58 +36,39 @@ const CreateListing = () => {
     };
 
     return (
-        <div className="create-listing-container" style={{ fontFamily: '"Bricolage Grotesque", sans-serif', maxWidth: '500px', margin: '50px auto', padding: '2rem', backgroundColor: 'white', borderRadius: '15px' }}>
-            <h2>List Your Product or Service</h2>
-            <form onSubmit={handleCreateListing}>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="assetType" style={{ display: 'block', marginBottom: '5px' }}>What are you selling?</label>
-                    <input
-                        type="text"
-                        id="assetType"
-                        value={assetType}
-                        onChange={(e) => setAssetType(e.target.value)}
-                        required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
-                    />
+        <div className="create-listing-container">
+            <BackButton />
+            <h2>Create a New Listing</h2>
+            <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                    <label htmlFor="name">Product/Service Name</label>
+                    <input type="text" id="name" value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="quality" style={{ display: 'block', marginBottom: '5px' }}>Quality/Description</label>
-                    <input
-                        type="text"
-                        id="quality"
-                        value={quality}
-                        onChange={(e) => setQuality(e.target.value)}
-                        required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
-                    />
+                <div className="form-group">
+                    <label htmlFor="description">Description</label>
+                    <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} required />
                 </div>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="location" style={{ display: 'block', marginBottom: '5px' }}>Location</label>
-                    <input
-                        type="text"
-                        id="location"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
-                    />
+                <div className="form-group">
+                    <label htmlFor="price">Price (in HBAR)</label>
+                    <input type="number" id="price" value={price} onChange={(e) => setPrice(e.target.value)} required min="0" step="any" />
                 </div>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="price" style={{ display: 'block', marginBottom: '5px' }}>Price (in HBAR)</label>
-                    <input
-                        type="number"
-                        id="price"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
-                    />
+                <div className="form-group">
+                    <label htmlFor="category">Category</label>
+                    <select id="category" value={category} onChange={(e) => setCategory(e.target.value)}>
+                        <option value="Goods & Produce">Goods & Produce</option>
+                        <option value="Services & Gigs">Services & Gigs</option>
+                        <option value="Jobs & Requests">Jobs & Requests</option>
+                    </select>
                 </div>
-                <button type="submit" style={{ width: '100%', padding: '15px', backgroundColor: '#008000', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' }} disabled={isProcessing}>
-                    {isProcessing ? 'Listing...' : 'Create & List'}
+                <div className="form-group">
+                    <label htmlFor="imageUrl">Image URL</label>
+                    <input type="url" id="imageUrl" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required />
+                </div>
+                <button type="submit" className="submit-button" disabled={isProcessing}>
+                    {isProcessing ? 'Processing...' : 'Create Listing'}
                 </button>
             </form>
-            {status && <p style={{ marginTop: '1rem', color: status.includes('✅') ? 'green' : 'black' }}>{status}</p>}
+            {status && <p className="status-message">{status}</p>}
         </div>
     );
 };

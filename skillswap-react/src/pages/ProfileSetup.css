@@ -1,0 +1,73 @@
+.profile-setup-container {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    max-width: 500px;
+    margin: 50px auto;
+    padding: 2rem;
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    border-radius: 15px;
+    text-align: center;
+}
+
+.profile-setup-container h2 {
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.profile-setup-container p {
+    margin-bottom: 2rem;
+    color: #a0a0a0;
+}
+
+.profile-setup-container form div {
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+.profile-setup-container label {
+    display: block;
+    margin-bottom: 8px;
+    color: #ccc;
+}
+
+.profile-setup-container input,
+.profile-setup-container select {
+    width: 100%;
+    padding: 12px;
+    border-radius: 5px;
+    border: 1px solid #444;
+    background-color: #2a2a2a;
+    color: #f0f0f0;
+    box-sizing: border-box; /* Important for padding to be included in width */
+}
+
+.profile-setup-container button[type="submit"] {
+    width: 100%;
+    padding: 15px;
+    background-color: #2DD87F;
+    color: #121212;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: background-color 0.2s ease;
+}
+
+.profile-setup-container button[type="submit"]:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+}
+
+.profile-setup-container button[type="submit"]:hover:not(:disabled) {
+    background-color: #28b86b;
+}
+
+.profile-setup-container .status-message {
+    margin-top: 1rem;
+    color: #2DD87F;
+}
+
+.profile-setup-container .status-message.error {
+    color: #ff4d4d;
+}

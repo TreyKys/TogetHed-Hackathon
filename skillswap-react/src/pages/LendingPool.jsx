@@ -1,10 +1,12 @@
 import React from 'react';
+import BackButton from '../components/BackButton';
 
 const LendingPool = () => {
     return (
-        <div style={{ fontFamily: '"B_Bricolage Grotesque", sans-serif', padding: '2rem' }}>
+        <div>
+            <BackButton />
             <h2>Lending Pool</h2>
-            <p>This feature is coming soon. Stay tuned for updates on how you can lend and borrow against your tokenized assets.</p>
+            <p>This feature is coming soon.</p>
         </div>
     );
 };

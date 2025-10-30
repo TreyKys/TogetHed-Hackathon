@@ -31,13 +31,16 @@ html, body { font-family: var(--font-regular); background-color: #ffffff; color:
   height: 100vh;
   position: relative;
   display: flex;
-  align-items: flex-end; /* Aligns content to the bottom */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   padding: 60px 5%;
   color: #ffffff;
-  /* JULES: Add the Hero Background Image here. This is the first image in the design with the people. */
-  background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('https://i.postimg.cc/NfdKCKNv/1761746207460.png');
+  background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://i.postimg.cc/6pz0BVBv/Gemini-Generated-Image-pynbzgpynbzgpynb-2.jpg');
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
 }
 
 .lp-header { position: absolute; top: 20px; left: 5%; }

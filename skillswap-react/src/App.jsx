@@ -10,6 +10,7 @@ import CreateListing from './pages/CreateListing.jsx';
 import MyAssets from './pages/MyAssets.jsx';
 import LendingPool from './pages/LendingPool.jsx';
 import AgentStaking from './pages/AgentStaking.jsx';
+import Layout from './components/Layout.jsx';
 
 function App() {
   return (
@@ -25,45 +26,33 @@ function AppContent() {
   const { accountId, isLoaded } = useWallet();
   console.log("AppContent: Rendering with accountId:", accountId, "and isLoaded:", isLoaded);
 
-  // We wait until the wallet has been checked from localStorage before rendering.
   if (!isLoaded) {
-    return <div>Loading...</div>; // Or a proper spinner component
+    return <div className="loading-container">Restoring your vault...</div>;
   }
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={accountId ? <Navigate to="/profile-setup" /> : <LandingPage />}
-      />
-      <Route
-        path="/marketplace"
-        element={accountId ? <Marketplace /> : <Navigate to="/" />}
-      />
-      <Route
-        path="/profile-setup"
-        element={accountId ? <ProfileSetup /> : <Navigate to="/" />}
-      />
-      <Route
-        path="/create-listing"
-        element={accountId ? <CreateListing /> : <Navigate to="/" />}
-      />
-      <Route
-        path="/my-assets"
-        element={accountId ? <MyAssets /> : <Navigate to="/" />}
-      />
-      <Route
-        path="/lending-pool"
-        element={accountId ? <LendingPool /> : <Navigate to="/" />}
-      />
-      <Route
-        path="/agent-staking"
-        element={accountId ? <AgentStaking /> : <Navigate to="/" />}
-      />
-      {/* Redirect any other path to the root */}
-      <Route path="*" element={<Navigate to="/" />} />
+      <Route path="/" element={!accountId ? <LandingPage /> : <Navigate to="/marketplace" />} />
+      <Route path="/*" element={accountId ? <ProtectedRoutes /> : <Navigate to="/" />} />
     </Routes>
   );
 }
+
+const ProtectedRoutes = () => {
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/marketplace" element={<Marketplace />} />
+        <Route path="/profile-setup" element={<ProfileSetup />} />
+        <Route path="/create-listing" element={<CreateListing />} />
+        <Route path="/my-assets" element={<MyAssets />} />
+        <Route path="/lending-pool" element={<LendingPool />} />
+        <Route path="/agent-staking" element={<AgentStaking />} />
+        {/* Add other protected routes here */}
+        <Route path="*" element={<Navigate to="/marketplace" />} />
+      </Routes>
+    </Layout>
+  );
+};
 
 export default App;

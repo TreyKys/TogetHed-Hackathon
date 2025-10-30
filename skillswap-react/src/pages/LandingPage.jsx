@@ -64,7 +64,7 @@ const LandingPage = () => {
     <main className="lp-container">
       <section className="lp-hero">
         <header className="lp-header">
-          <img src="https://i.postimg.cc/Bbdxjtd9/1761754567849.png" alt="Integro Logo" className="lp-logo" />
+          {/* Logo removed as per instructions */}
         </header>
         <div className="lp-hero-content">
           <h1>AFRICA'S INFORMAL ECONOMY RUNS ON TRUST - BUT TRUST IS FRAGILE</h1>

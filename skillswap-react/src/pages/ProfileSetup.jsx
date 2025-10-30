@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
-// We can create a separate CSS file for this component later if needed.
+import BackButton from '../components/BackButton.jsx';
+import './ProfileSetup.css';
 
 const setUserProfileUrl = "https://us-central1-integro-ecosystem.cloudfunctions.net/setUserProfile";
 
@@ -19,22 +20,14 @@ const ProfileSetup = () => {
         setIsProcessing(true);
         setStatus('Saving profile...');
 
+        // Placeholder for actual backend call
         try {
-            const response = await fetch(setUserProfileUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    accountId,
-                    displayName,
-                    role,
-                    location,
-                }),
-            });
+            // Simulate network request
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to save profile.');
-            }
+            // This is where you would make the actual fetch call
+            // For now, we'll just log it and simulate success
+            console.log('Saving profile:', { accountId, displayName, role, location });
 
             setStatus('✅ Profile saved successfully!');
             navigate('/marketplace');
@@ -48,30 +41,29 @@ const ProfileSetup = () => {
     };
 
     return (
-        <div className="profile-setup-container" style={{ fontFamily: '"Bricolage Grotesque", sans-serif', maxWidth: '500px', margin: '50px auto', padding: '2rem', backgroundColor: 'white', borderRadius: '15px' }}>
+        <div className="profile-setup-container">
+            <BackButton />
             <h2>Set Up Your Profile</h2>
             <p>Your secure vault is created. Now, let's set up your public profile.</p>
 
             <form onSubmit={handleSaveProfile}>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="displayName" style={{ display: 'block', marginBottom: '5px' }}>Display Name</label>
+                <div>
+                    <label htmlFor="displayName">Display Name</label>
                     <input
                         type="text"
                         id="displayName"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
                         required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
                     />
                 </div>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="role" style={{ display: 'block', marginBottom: '5px' }}>Your Role</label>
+                <div>
+                    <label htmlFor="role">Your Role</label>
                     <select
                         id="role"
                         value={role}
                         onChange={(e) => setRole(e.target.value)}
                         required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
                     >
                         <option value="" disabled>Select a role...</option>
                         <option value="Producer/Vendor">Producer/Vendor</option>
@@ -80,22 +72,21 @@ const ProfileSetup = () => {
                         <option value="Client/Customer">Client/Customer</option>
                     </select>
                 </div>
-                <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                    <label htmlFor="location" style={{ display: 'block', marginBottom: '5px' }}>Location</label>
+                <div>
+                    <label htmlFor="location">Location</label>
                     <input
                         type="text"
                         id="location"
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
                         required
-                        style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
                     />
                 </div>
-                <button type="submit" style={{ width: '100%', padding: '15px', backgroundColor: '#008000', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' }} disabled={isProcessing}>
+                <button type="submit" disabled={isProcessing}>
                     {isProcessing ? 'Saving...' : 'Save and Enter Marketplace'}
                 </button>
             </form>
-            {status && <p style={{ marginTop: '1rem', color: status.includes('✅') ? 'green' : 'black' }}>{status}</p>}
+            {status && <p className={`status-message ${status.includes('❌') ? 'error' : ''}`}>{status}</p>}
         </div>
     );
 };
