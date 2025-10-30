@@ -1,10 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-const NavMenu = () => {
+const NavMenu = ({ isOpen }) => {
   return (
-    <nav className="nav-menu">
-      {/* This will be styled as a slide-out menu later */}
+    <nav className={`nav-menu ${isOpen ? 'open' : ''}`}>
       <section>
         <h4>ECOSYSTEM</h4>
         <ul>

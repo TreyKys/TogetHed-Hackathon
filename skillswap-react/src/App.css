@@ -1,167 +1,209 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* General Body Styles */
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f9f9f9;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
-
-/* General App Layout */
+/* App Layout */
 .app-container {
+  max-width: 480px;
+  margin: 20px auto;
+  background: #f9f9f9;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
 }
 
 main {
-  flex-grow: 1;
-  padding: 1rem;
+  padding: 20px;
 }
 
 /* Header */
 .app-header {
+  background: linear-gradient(135deg, #1A1A1A, #000000);
+  color: white;
+  padding: 20px;
+  text-align: center;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
 }
 
-.logo a {
+.app-header .logo a {
+  color: white;
+  font-size: 28px;
   text-decoration: none;
   font-weight: bold;
-  font-size: 1.5rem;
 }
 
 /* Footer */
 .app-footer {
   padding: 1rem;
   text-align: center;
-  background-color: #f8f9fa;
-  border-top: 1px solid #dee2e6;
+  font-size: 0.8rem;
+  color: #666;
+  border-top: 1px solid #eee;
 }
 
-/* NavMenu */
-.nav-menu {
-  position: fixed;
-  top: 0;
-  left: -250px;
-  width: 250px;
-  height: 100%;
-  background-color: #343a40;
-  color: white;
-  padding: 1rem;
-  transition: left 0.3s ease-in-out;
-  z-index: 1000;
+/* Reusable Card Component */
+.card {
+  background: white;
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 15px;
 }
 
-.app-container.menu-open .nav-menu {
-  left: 0;
-}
-
-.menu-toggle {
-  background: none;
+/* Buttons */
+.hedera-button {
+  background: #2DD87F;
+  color: black;
   border: none;
-  font-size: 1.5rem;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 16px;
   cursor: pointer;
+  width: 100%;
+  margin-top: 10px;
+  font-weight: 600;
+  transition: background 0.3s, opacity 0.3s;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
 }
 
-/* Back Button */
+.hedera-button:hover:not(:disabled) {
+  background: #25b366;
+}
+
+.hedera-button:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .back-button {
   background: none;
   border: none;
   font-size: 1rem;
   cursor: pointer;
   margin-bottom: 1rem;
+  font-weight: bold;
 }
 
-/* Landing Page */
-.landing-container {
+/* Status Messages */
+.status-message {
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 15px;
   text-align: center;
+  word-wrap: break-word;
 }
+.status-info { background: #e3f2fd; color: #1565c0; }
+.status-success { background: #e8f5e8; color: #2e7d32; }
+.status-error { background: #ffebee; color: #c62828; }
 
-.landing-header {
-  display: flex;
-  justify-content: space-between;
-  padding: 1rem;
-}
-
-.hero {
-  padding: 4rem 1rem;
-}
-
-.cta-button {
-  background-color: #007bff;
-  color: white;
+/* Hamburger Menu */
+.menu-toggle {
+  background: none;
   border: none;
-  padding: 1rem 2rem;
-  font-size: 1.25rem;
+  color: white;
+  font-size: 28px;
   cursor: pointer;
+  z-index: 1001;
+}
+
+.nav-menu {
+  position: fixed;
+  top: 0;
+  left: -280px; /* Hidden by default */
+  width: 250px;
+  height: 100%;
+  background-color: #333;
+  color: white;
+  padding: 15px;
+  transition: left 0.3s ease-in-out;
+  z-index: 1000;
+}
+
+.nav-menu.open {
+  left: 0; /* Visible when open */
+}
+
+.nav-menu h4 {
+  color: #2DD87F;
+}
+
+.nav-menu ul {
+  list-style: none;
+  padding: 0;
+}
+.nav-menu a {
+  color: white;
+  text-decoration: none;
+  display: block;
+  padding: 8px 0;
 }
 
 /* Listings */
 .listings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1rem;
 }
 
 .listing-card {
-  border: 1px solid #dee2e6;
-  border-radius: 0.25rem;
+  border: 1px solid #eee;
+  border-radius: 15px;
   padding: 1rem;
+  background: #fff;
 }
 
-/* Sell Form */
-.sell-form .form-group {
+/* Forms */
+.sell-form .form-group, .profile-setup-form .form-group {
   margin-bottom: 1rem;
+  text-align: left;
 }
 
-.sell-form label {
+.sell-form label, .profile-setup-form label {
   display: block;
   margin-bottom: 0.5rem;
+  font-weight: bold;
 }
 
-.sell-form input,
-.sell-form textarea {
+.sell-form input, .sell-form textarea, .profile-setup-form input, .profile-setup-form select {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ced4da;
-  border-radius: 0.25rem;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+/* Landing Page Specifics */
+.landing-header {
+  background: none;
+  padding: 1rem;
+}
+.landing-container {
+  text-align: center;
+}
+.hero {
+  padding: 2rem 1rem;
+}
+.hero h1 {
+  font-size: 2rem;
+}
+.cta-button {
+  background: #2DD87F;
+  color: black;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1.25rem;
+  cursor: pointer;
+  border-radius: 12px;
+  font-weight: 600;
 }
