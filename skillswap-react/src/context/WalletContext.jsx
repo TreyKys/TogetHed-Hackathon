@@ -74,20 +74,29 @@ export const WalletProvider = ({ children }) => {
     }
   }, [accountId, fetchBalance]);
 
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (accountId) {
-        const userDocRef = doc(db, 'users', accountId);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setUserProfile(userDocSnap.data());
-        } else {
-          setUserProfile(null);
-        }
+  const fetchUserProfile = useCallback(async () => {
+    if (accountId) {
+      console.log("WalletContext: Fetching user profile for", accountId);
+      const userDocRef = doc(db, 'users', accountId);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        console.log("WalletContext: User profile found.");
+        setUserProfile(userDocSnap.data());
+      } else {
+        console.log("WalletContext: User profile not found.");
+        setUserProfile(null);
       }
-    };
-    fetchUserProfile();
+    }
   }, [accountId]);
+
+  // On component mount, try to load the wallet from localStorage
+  useEffect(() => {
+    fetchUserProfile();
+  }, [accountId, fetchUserProfile]);
+
+  const refreshUserProfile = async () => {
+    await fetchUserProfile();
+  };
 
   // This function will be called by the onboarding flow to set the new vault details
   const createVault = (newAccountId, newPrivateKey, newEvmAddress) => {
@@ -402,6 +411,7 @@ export const WalletProvider = ({ children }) => {
     nftSerialNumber,
     createVault,
     logout,
+    refreshUserProfile,
     handleTokenAssociation,
     handleMint,
     handleList,
