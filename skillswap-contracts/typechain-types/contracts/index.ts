@@ -3,3 +3,4 @@
 /* eslint-disable */
 export type { AssetToken } from "./AssetToken";
 export type { Escrow } from "./Escrow";
+export type { LendingPool } from "./LendingPool";

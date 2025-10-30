@@ -3,3 +3,4 @@
 /* eslint-disable */
 export { AssetToken__factory } from "./AssetToken__factory";
 export { Escrow__factory } from "./Escrow__factory";
+export { LendingPool__factory } from "./LendingPool__factory";

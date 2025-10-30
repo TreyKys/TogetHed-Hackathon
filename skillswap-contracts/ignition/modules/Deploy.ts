@@ -10,8 +10,9 @@ const DeployModule = buildModule("DeployModule", (m) => {
   // to its constructor. This allows the Escrow contract to correctly
   // query the ownership of the HTS NFTs.
   const escrow = m.contract("Escrow", [assetTokenAddress]);
+  const lendingPool = m.contract("LendingPool", [assetTokenAddress]);
 
-  return { escrow };
+  return { escrow, lendingPool };
 });
 
 export default DeployModule;

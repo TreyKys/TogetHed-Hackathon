@@ -11,6 +11,11 @@ import MyAssets from './pages/MyAssets.jsx';
 import LendingPool from './pages/LendingPool.jsx';
 import AgentStaking from './pages/AgentStaking.jsx';
 import Layout from './components/Layout.jsx';
+import LendingPoolOverview from './pages/Finance/LendingPoolOverview.jsx';
+import TakeLoan from './pages/Finance/TakeLoan.jsx';
+import MyLoans from './pages/Finance/MyLoans.jsx';
+import DepositLiquidity from './pages/Finance/DepositLiquidity.jsx';
+import RepayLoan from './pages/Finance/RepayLoan.jsx';
 
 function App() {
   return (
@@ -23,8 +28,7 @@ function App() {
 }
 
 function AppContent() {
-  const { accountId, isLoaded } = useWallet();
-  console.log("AppContent: Rendering with accountId:", accountId, "and isLoaded:", isLoaded);
+  const { accountId, userProfile, isLoaded } = useWallet();
 
   if (!isLoaded) {
     return <div className="loading-container">Restoring your vault...</div>;
@@ -33,7 +37,22 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/" element={!accountId ? <LandingPage /> : <Navigate to="/marketplace" />} />
-      <Route path="/*" element={accountId ? <ProtectedRoutes /> : <Navigate to="/" />} />
+      <Route
+        path="/*"
+        element={
+          accountId ? (
+            userProfile ? (
+              <ProtectedRoutes />
+            ) : (
+              <Navigate to="/profile-setup" />
+            )
+          ) : (
+            <Navigate to="/" />
+          )
+        }
+      />
+      {/* Public route for profile setup */}
+      <Route path="/profile-setup" element={<ProfileSetup />} />
     </Routes>
   );
 }
@@ -43,10 +62,14 @@ const ProtectedRoutes = () => {
     <Layout>
       <Routes>
         <Route path="/marketplace" element={<Marketplace />} />
-        <Route path="/profile-setup" element={<ProfileSetup />} />
         <Route path="/create-listing" element={<CreateListing />} />
         <Route path="/my-assets" element={<MyAssets />} />
-        <Route path="/lending-pool" element={<LendingPool />} />
+        <Route path="/lending-pool" element={<Navigate to="/lending-pool-overview" />} />
+        <Route path="/lending-pool-overview" element={<LendingPoolOverview />} />
+        <Route path="/take-loan" element={<TakeLoan />} />
+        <Route path="/my-loans" element={<MyLoans />} />
+        <Route path="/deposit-liquidity" element={<DepositLiquidity />} />
+        <Route path="/repay-loan" element={<RepayLoan />} />
         <Route path="/agent-staking" element={<AgentStaking />} />
         {/* Add other protected routes here */}
         <Route path="*" element={<Navigate to="/marketplace" />} />

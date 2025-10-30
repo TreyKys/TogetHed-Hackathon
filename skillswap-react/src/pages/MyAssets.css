@@ -1,33 +1,100 @@
 .my-assets-container {
-    max-width: 800px;
-    margin: 2rem auto;
     padding: 2rem;
+    color: white;
 }
 
 .my-assets-container h2 {
     text-align: center;
     margin-bottom: 2rem;
-    color: #fff;
+    font-size: 2.5rem;
+    font-family: 'Bricolage Grotesque', sans-serif;
 }
 
 .assets-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.5rem;
 }
 
 .asset-card {
-    background-color: #1e1e1e;
-    border-radius: 10px;
-    padding: 1.5rem;
-    text-align: center;
+    background: #2a2a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid #444;
 }
 
-.asset-card h3 {
+.asset-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 255, 135, 0.15);
+}
+
+.asset-image {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+}
+
+.asset-info {
+    padding: 1rem;
+}
+
+.asset-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    color: #f1f1f1;
+}
+
+.asset-serial {
+    color: #888;
+    font-size: 0.9rem;
     margin-bottom: 1rem;
-    color: #2DD87F;
 }
 
-.asset-card p {
-    color: #a0a0a0;
+.asset-status-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.status-badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+/* Specific status colors */
+.status-in-wallet {
+    background-color: #007bff;
+    color: white;
+}
+
+.status-listed {
+    background-color: #28a745;
+    color: white;
+}
+
+.status-pending-delivery {
+    background-color: #ffc107;
+    color: #333;
+}
+
+.status-sold {
+    background-color: #dc3545;
+    color: white;
+}
+
+.no-assets-container {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: #2a2a2e;
+    border-radius: 12px;
+    border: 1px solid #444;
+}
+
+.no-assets-container p {
+    font-size: 1.2rem;
+    color: #aaa;
+    margin: 0.5rem 0;
 }
