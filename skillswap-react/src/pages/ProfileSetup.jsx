@@ -20,14 +20,22 @@ const ProfileSetup = () => {
         setIsProcessing(true);
         setStatus('Saving profile...');
 
-        // Placeholder for actual backend call
         try {
-            // Simulate network request
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            const response = await fetch(setUserProfileUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accountId,
+                    displayName,
+                    role,
+                    location,
+                }),
+            });
 
-            // This is where you would make the actual fetch call
-            // For now, we'll just log it and simulate success
-            console.log('Saving profile:', { accountId, displayName, role, location });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save profile.');
+            }
 
             setStatus('✅ Profile saved successfully!');
             navigate('/marketplace');

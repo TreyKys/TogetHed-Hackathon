@@ -1,0 +1,33 @@
+.my-assets-container {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 2rem;
+}
+
+.my-assets-container h2 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #fff;
+}
+
+.assets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.asset-card {
+    background-color: #1e1e1e;
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.asset-card h3 {
+    margin-bottom: 1rem;
+    color: #2DD87F;
+}
+
+.asset-card p {
+    color: #a0a0a0;
+}

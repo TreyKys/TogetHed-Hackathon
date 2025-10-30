@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
-import { db, collection, onSnapshot, doc, updateDoc } from '../firebase';
+import { db, collection, onSnapshot } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import Toast from '../components/Toast.jsx';
 import ConfirmationModal from '../components/ConfirmationModal.jsx';
