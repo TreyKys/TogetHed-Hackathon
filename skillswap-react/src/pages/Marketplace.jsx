@@ -21,7 +21,7 @@ import {
 import { escrowContractAccountId } from '../hedera.js';
 
 function Marketplace() {
-  const { accountId, privateKey, userProfile, setFlowState } = useWallet();
+  const { accountId, privateKey, userProfile, isLoaded, setFlowState } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -45,10 +45,12 @@ function Marketplace() {
 
   useEffect(() => {
     // Show the profile modal if the user is loaded and doesn't have a profile
-    if (userProfile === null) {
+    if (isLoaded && userProfile === null) {
       setShowProfileModal(true);
+    } else if (userProfile) {
+      setShowProfileModal(false);
     }
-  }, [userProfile]);
+  }, [isLoaded, userProfile]);
 
   const handleProfileComplete = () => {
     setShowProfileModal(false);
@@ -56,7 +58,11 @@ function Marketplace() {
 
   const handleBuyClick = async (listing) => {
     try {
-      const userClient = Client.forTestnet();
+      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+      const userAccountId = AccountId.fromString(accountId);
+      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
       const getPriceQuery = new ContractCallQuery()
         .setContractId(escrowContractAccountId)
         .setGas(100000)

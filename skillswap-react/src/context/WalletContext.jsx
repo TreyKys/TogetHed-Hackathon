@@ -230,7 +230,7 @@ export const WalletProvider = ({ children }) => {
       console.error("handleList Error: assetTokenId is not set. Please check hedera.js");
       throw new Error("Configuration error: assetTokenId is missing.");
     }
-    if (nftSerialNumber === null || nftSerialNumber === undefined) {
+    if (currentSerial === null || currentSerial === undefined) {
       console.error("handleList Error: nftSerialNumber is not set. Minting may have failed.");
       throw new Error("State error: nftSerialNumber is missing.");
     }
@@ -242,7 +242,7 @@ export const WalletProvider = ({ children }) => {
     const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
     const tokenIdObj = TokenId.fromString(assetTokenId);
-    const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
+    const nftIdObj = new NftId(tokenIdObj, Number(currentSerial));
 
     const allowanceTx = new AccountAllowanceApproveTransaction()
       .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
@@ -257,7 +257,7 @@ export const WalletProvider = ({ children }) => {
       .setContractId(escrowContractAccountId)
       .setGas(1000000)
       .setFunction("listAsset", new ContractFunctionParameters()
-        .addUint256(nftSerialNumber)
+        .addUint256(currentSerial)
         .addUint256(priceInWei)
       );
 
