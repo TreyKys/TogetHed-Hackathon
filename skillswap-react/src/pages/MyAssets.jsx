@@ -49,6 +49,7 @@ const MyAssets = () => {
 
     useEffect(() => {
         const fetchAssets = async () => {
+            console.log("MyAssets useEffect triggered");
             if (!accountId) return;
             setIsLoading(true);
             try {
@@ -121,9 +122,8 @@ const MyAssets = () => {
             {toast.show && <Toast message={toast.message} txHash={toast.txHash} onClose={() => setToast({ show: false, message: '', txHash: '' })} />}
             <BackButton />
             <h2>My Digital Assets</h2>
-            {isLoading ? (
-                <p>Loading your assets from the Hedera network...</p>
-            ) : assets.length > 0 ? (
+            {isLoading && <p>Loading your assets from the Hedera network...</p>}
+            {!isLoading && assets.length > 0 ? (
                 <div className="assets-grid">
                     {assets.map(asset => (
                         <div key={asset.id} className="asset-card">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
 import { db, collection, onSnapshot } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -103,11 +103,12 @@ function Marketplace() {
           ))}
         </div>
 
-        {isProfileLoading ? (
-          <p>Loading profile...</p>
-        ) : isLoading ? (
-          <p>Loading listings...</p>
-        ) : (
+        {isProfileLoading && <p>Loading profile...</p>}
+        {!isProfileLoading && !userProfile && (
+          <Navigate to="/profile" />
+        )}
+        {isLoading && <p>Loading listings...</p>}
+        {!isLoading && (
           <motion.div
             className="listings-grid"
             variants={containerVariants}

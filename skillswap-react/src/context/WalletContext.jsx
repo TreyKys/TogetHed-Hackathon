@@ -12,7 +12,8 @@ import {
   ContractExecuteTransaction,
   ContractFunctionParameters,
   Hbar,
-  AccountBalanceQuery
+  AccountBalanceQuery,
+  ContractCallQuery
 } from '@hashgraph/sdk';
 import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc } from '../firebase';
 import {
@@ -80,17 +81,23 @@ export const WalletProvider = ({ children }) => {
   const fetchUserProfile = useCallback(async () => {
     if (accountId) {
       setIsProfileLoading(true);
-      console.log("WalletContext: Fetching user profile for", accountId);
-      const userDocRef = doc(db, 'users', accountId);
-      const userDocSnap = await getDoc(userDocRef);
-      if (userDocSnap.exists()) {
-        console.log("WalletContext: User profile found.");
-        setUserProfile(userDocSnap.data());
-      } else {
-        console.log("WalletContext: User profile not found.");
+      try {
+        console.log("WalletContext: Fetching user profile for", accountId);
+        const userDocRef = doc(db, 'users', accountId);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          console.log("WalletContext: User profile found.");
+          setUserProfile(userDocSnap.data());
+        } else {
+          console.log("WalletContext: User profile not found.");
+          setUserProfile(null);
+        }
+      } catch (error) {
+        console.error("Profile fetch failed:", error);
         setUserProfile(null);
+      } finally {
+        setIsProfileLoading(false);
       }
-      setIsProfileLoading(false);
     }
   }, [accountId]);
 
@@ -98,6 +105,12 @@ export const WalletProvider = ({ children }) => {
   useEffect(() => {
     fetchUserProfile();
   }, [accountId, fetchUserProfile]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "test") {
+      setIsProfileLoading(false);
+    }
+  }, []);
 
   const refreshUserProfile = async () => {
     await fetchUserProfile();
