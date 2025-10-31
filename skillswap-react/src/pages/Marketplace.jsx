@@ -57,7 +57,9 @@ function Marketplace() {
   };
 
   const handleBuyClick = async (listing) => {
+    console.log("handleBuyClick: Initiating purchase for listing:", listing);
     try {
+      console.log("handleBuyClick: Fetching on-chain price for serial:", listing.serialNumber);
       const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
       const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
       const userAccountId = AccountId.fromString(accountId);
@@ -69,23 +71,34 @@ function Marketplace() {
         .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(listing.serialNumber));
 
       const priceQueryResult = await getPriceQuery.execute(userClient);
-      const priceInTinybars = priceQueryResult.getUint256(0);
+      const priceInTinybarsLong = priceQueryResult.getUint256(0);
+      console.log("handleBuyClick: Raw price from contract (Long):", priceInTinybarsLong.toString());
 
-      if (priceInTinybars.isZero()) {
-        throw new Error("Could not retrieve a valid price for this NFT.");
+      if (priceInTinybarsLong.isZero()) {
+        console.error("handleBuyClick: On-chain price is zero. Aborting.");
+        throw new Error("This asset is not currently listed for sale or has a price of zero.");
       }
 
+      const priceInTinybars = priceInTinybarsLong.toNumber();
+      console.log("handleBuyClick: Converted price (Number):", priceInTinybars);
+
+      // Set the selected listing with the definitive on-chain price
       setSelectedListing({ ...listing, priceInTinybars });
       setIsModalOpen(true);
+      console.log("handleBuyClick: Opening confirmation modal.");
 
     } catch (error) {
-      console.error("Failed to get price:", error);
-      setToast({ show: true, message: `Error fetching price: ${error.message}` });
+      console.error("handleBuyClick: Error during price fetching:", error);
+      setToast({ show: true, message: `Error preparing purchase: ${error.message}` });
     }
   };
 
   const executeBuy = async () => {
-    if (!selectedListing) return;
+    if (!selectedListing) {
+      console.error("executeBuy: Attempted to buy without a selected listing.");
+      return;
+    }
+    console.log("executeBuy: Executing purchase for:", selectedListing);
     setIsModalOpen(false);
     setIsTransactionLoading(true);
 
@@ -94,6 +107,8 @@ function Marketplace() {
       const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+      console.log(`executeBuy: Funding escrow with ${selectedListing.priceInTinybars} tinybars for serial ${selectedListing.serialNumber}`);
 
       const fundTx = new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
@@ -104,20 +119,32 @@ function Marketplace() {
       const frozenFundTx = await fundTx.freezeWith(userClient);
       const signedFundTx = await frozenFundTx.sign(userPrivateKey);
       const fundTxResponse = await signedFundTx.execute(userClient);
+      console.log("executeBuy: Transaction submitted. Waiting for receipt...");
       await fundTxResponse.getReceipt(userClient);
+      console.log("executeBuy: Transaction confirmed.");
 
-      // Update Firestore document
+      // Update Firestore document to 'Pending Delivery'
+      console.log("executeBuy: Updating Firestore status to 'Pending Delivery' for listing ID:", selectedListing.id);
       const listingRef = doc(db, 'listings', selectedListing.id);
       await updateDoc(listingRef, { status: 'Pending Delivery' });
+      console.log("executeBuy: Firestore status updated.");
 
       setFlowState("FUNDED");
-      setToast({ show: true, message: 'Escrow Funded Successfully!', txHash: fundTxResponse.transactionId.toString() });
+      setToast({ show: true, message: 'Purchase Successful! Escrow is funded.', txHash: fundTxResponse.transactionId.toString() });
 
     } catch (error) {
-      console.error("Purchase failed:", error);
-      setToast({ show: true, message: `Purchase Failed: ${error.message}` });
+      console.error("executeBuy: Full error object:", error);
+      let errorMessage = error.message;
+      if (error.status) {
+         errorMessage = `Transaction failed with status: ${error.status.toString()}`;
+      } else if (error.message.includes('insufficient')) {
+         errorMessage = 'Insufficient account balance to complete the purchase.';
+      }
+      setToast({ show: true, message: `Purchase Failed: ${errorMessage}` });
     } finally {
       setIsTransactionLoading(false);
+      setSelectedListing(null); // Clear selected listing after the attempt
+      console.log("executeBuy: Purchase flow finished.");
     }
   };
 
@@ -173,7 +200,7 @@ function Marketplace() {
             initial="hidden"
             animate="visible"
           >
-            {listings.filter(l => l.category === activeTab).map(listing => (
+            {listings.filter(l => l.category === activeTab && l.status === 'Listed').map(listing => (
               <motion.div key={listing.id} className="listing-card" variants={itemVariants}>
                 <img src={listing.imageUrl} alt={listing.name} className="listing-image" />
                 <div className="listing-info">

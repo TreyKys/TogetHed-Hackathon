@@ -204,10 +204,10 @@ export const WalletProvider = ({ children }) => {
     setFlowState('MINTED');
 
     // 2. List on-chain
-    await handleList(price, serialNumber);
+    const listTxResponse = await handleList(price, serialNumber);
 
-    // 3. Save to Firestore
-    await addDoc(collection(db, "listings"), {
+    // 3. Save to Firestore with 'Pending Confirmation' status
+    const listingRef = await addDoc(collection(db, "listings"), {
       tokenId: assetTokenId,
       serialNumber: Number(serialNumber),
       name,
@@ -218,8 +218,23 @@ export const WalletProvider = ({ children }) => {
       sellerEvmAddress: evmAddress,
       imageUrl,
       createdAt: Timestamp.now(),
+      status: 'Pending Confirmation', // Initial status
     });
 
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+    // Wait for the on-chain listing receipt
+    await listTxResponse.getReceipt(userClient);
+
+    // 4. Update status to 'Listed' after on-chain confirmation
+    await updateDoc(listingRef, {
+      status: 'Listed',
+    });
+
+
+    setFlowState("LISTED");
     return { serialNumber };
   };
 
@@ -264,10 +279,11 @@ export const WalletProvider = ({ children }) => {
     const frozenListTx = await listAssetTx.freezeWith(userClient);
     const signedListTx = await frozenListTx.sign(userPrivateKey);
     const listTxResponse = await signedListTx.execute(userClient);
-    await listTxResponse.getReceipt(userClient);
+
+    // Note: We await the receipt in the calling function now.
 
     setFlowState("LISTED");
-    return listTxResponse.transactionId.toString();
+    return listTxResponse;
   };
 
   const approveNFTForPool = async (serialNumber) => {
