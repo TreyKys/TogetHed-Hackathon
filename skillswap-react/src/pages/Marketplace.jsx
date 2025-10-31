@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
 import { db, collection, onSnapshot, query, where } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { motion } from 'framer-motion';
 import Toast from '../components/Toast.jsx';
 import ConfirmationModal from '../components/ConfirmationModal.jsx';
 import './Marketplace.css';
@@ -88,14 +86,14 @@ function Marketplace() {
         {isLoading ? (
           <p>Loading listings...</p>
         ) : (
-          <motion.div
+          <div
             className="listings-grid"
             variants={containerVariants}
             initial="hidden"
             animate="visible"
           >
             {listings.filter(l => l.category === activeTab).map(listing => (
-              <motion.div key={listing.id} className="listing-card" variants={itemVariants}>
+              <div key={listing.id} className="listing-card" variants={itemVariants}>
                 <img src={listing.imageUrl} alt={listing.name} className="listing-image" />
                 <div className="listing-info">
                   <h3>{listing.name}</h3>
@@ -107,9 +105,9 @@ function Marketplace() {
                     </button>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
         )}
       </main>
     </div>
