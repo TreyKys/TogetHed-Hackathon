@@ -17,51 +17,97 @@ const decodeMetadata = (base64) => {
     }
 };
 
+import Toast from '../components/Toast.jsx';
+
 const MyAssets = () => {
-    const { accountId } = useWallet();
+    const { accountId, handleConfirmDelivery } = useWallet();
     const [assets, setAssets] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isConfirming, setIsConfirming] = useState(null); // Tracks the serial number of the asset being confirmed
+    const [toast, setToast] = useState({ show: false, message: '', txHash: '' });
+
+    const handleConfirmClick = async (serialNumber) => {
+        setIsConfirming(serialNumber);
+        try {
+            const txResponse = await handleConfirmDelivery(serialNumber);
+            setToast({
+                show: true,
+                message: `Delivery confirmed for asset #${serialNumber}!`,
+                txHash: txResponse.transactionId.toString(),
+            });
+            // Optimistically update the UI or refetch assets
+            setAssets(prevAssets => prevAssets.map(asset =>
+                asset.serialNumber === serialNumber ? { ...asset, status: 'Sold' } : asset
+            ));
+        } catch (error) {
+            console.error("Failed to confirm delivery:", error);
+            setToast({ show: true, message: `Confirmation Failed: ${error.message}` });
+        } finally {
+            setIsConfirming(null);
+        }
+    };
 
     useEffect(() => {
         const fetchAssets = async () => {
             if (!accountId) return;
             setIsLoading(true);
             try {
-                // 1. Fetch NFTs from Hedera Mirror Node
+                // 1. Fetch NFTs the user OWNS from Hedera Mirror Node
                 const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/accounts/${accountId}/nfts?token.id=${assetTokenId}`;
                 const response = await fetch(mirrorNodeUrl);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch from mirror node: ${response.statusText}`);
-                }
+                if (!response.ok) throw new Error(`Failed to fetch from mirror node: ${response.statusText}`);
                 const data = await response.json();
                 const userNfts = data.nfts || [];
 
-                // 2. Fetch listing statuses from Firestore
+                // 2. Fetch listing data from Firestore to enrich the owned NFTs
                 const listingsRef = collection(db, "listings");
-                const q = query(listingsRef, where("sellerAccountId", "==", accountId));
-                const querySnapshot = await getDocs(q);
+                const sellerQuery = query(listingsRef, where("sellerAccountId", "==", accountId));
+                const sellerSnapshot = await getDocs(sellerQuery);
                 const listingStatuses = {};
-                querySnapshot.forEach(doc => {
+                sellerSnapshot.forEach(doc => {
                     const docData = doc.data();
                     listingStatuses[docData.serialNumber] = docData.status || 'Listed';
                 });
 
-                // 3. Combine data and set state
-                const combinedAssets = userNfts.map(nft => {
+                const ownedAssets = userNfts.map(nft => {
                     const metadata = decodeMetadata(nft.metadata);
                     return {
+                        id: `${nft.token_id}-${nft.serial_number}`,
                         serialNumber: nft.serial_number,
                         name: metadata.name || 'Untitled Asset',
                         description: metadata.description || 'No description.',
                         imageUrl: metadata.image || 'https://via.placeholder.com/150',
                         status: listingStatuses[nft.serial_number] || 'In Wallet',
+                        isOwner: true,
                     };
                 });
 
-                setAssets(combinedAssets);
+                // 3. Fetch assets the user has PURCHASED but not yet received
+                const buyerQuery = query(listingsRef, where("buyerAccountId", "==", accountId), where("status", "==", "Pending Delivery"));
+                const buyerSnapshot = await getDocs(buyerQuery);
+                const purchasedAssets = buyerSnapshot.docs.map(doc => {
+                    const docData = doc.data();
+                    return {
+                        id: doc.id,
+                        serialNumber: docData.serialNumber,
+                        name: docData.name,
+                        description: docData.description,
+                        imageUrl: docData.imageUrl,
+                        status: docData.status,
+                        isOwner: false,
+                    };
+                });
+
+                // 4. Combine and set state, ensuring no duplicates
+                const allAssets = [...ownedAssets, ...purchasedAssets];
+                const uniqueAssets = allAssets.filter((asset, index, self) =>
+                    index === self.findIndex((a) => a.serialNumber === asset.serialNumber)
+                );
+
+                setAssets(uniqueAssets);
             } catch (error) {
                 console.error("Failed to fetch assets:", error);
-                setAssets([]); // Clear assets on error
+                setAssets([]);
             } finally {
                 setIsLoading(false);
             }
@@ -72,6 +118,7 @@ const MyAssets = () => {
 
     return (
         <div className="my-assets-container">
+            {toast.show && <Toast message={toast.message} txHash={toast.txHash} onClose={() => setToast({ show: false, message: '', txHash: '' })} />}
             <BackButton />
             <h2>My Digital Assets</h2>
             {isLoading ? (
@@ -79,7 +126,7 @@ const MyAssets = () => {
             ) : assets.length > 0 ? (
                 <div className="assets-grid">
                     {assets.map(asset => (
-                        <div key={asset.serialNumber} className="asset-card">
+                        <div key={asset.id} className="asset-card">
                             <img src={asset.imageUrl} alt={asset.name} className="asset-image" />
                             <div className="asset-info">
                                 <h3>{asset.name}</h3>
@@ -88,6 +135,15 @@ const MyAssets = () => {
                                     <span className={`status-badge status-${asset.status.toLowerCase().replace(' ', '-')}`}>
                                         {asset.status}
                                     </span>
+                                    {asset.status === 'Pending Delivery' && !asset.isOwner && (
+                                        <button
+                                            onClick={() => handleConfirmClick(asset.serialNumber)}
+                                            className="confirm-delivery-button"
+                                            disabled={isConfirming === asset.serialNumber}
+                                        >
+                                            {isConfirming === asset.serialNumber ? 'Confirming...' : 'Confirm Delivery'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>

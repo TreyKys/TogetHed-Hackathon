@@ -34,6 +34,7 @@ export const WalletProvider = ({ children }) => {
   const [hbarBalance, setHbarBalance] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [flowState, setFlowState] = useState('INITIAL');
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
 
@@ -78,6 +79,7 @@ export const WalletProvider = ({ children }) => {
 
   const fetchUserProfile = useCallback(async () => {
     if (accountId) {
+      setIsProfileLoading(true);
       console.log("WalletContext: Fetching user profile for", accountId);
       const userDocRef = doc(db, 'users', accountId);
       const userDocSnap = await getDoc(userDocRef);
@@ -88,6 +90,7 @@ export const WalletProvider = ({ children }) => {
         console.log("WalletContext: User profile not found.");
         setUserProfile(null);
       }
+      setIsProfileLoading(false);
     }
   }, [accountId]);
 
@@ -270,6 +273,49 @@ export const WalletProvider = ({ children }) => {
     return listTxResponse.transactionId.toString();
   };
 
+  const handleBuy = async (listing) => {
+    console.log("WalletContext handleBuy: Initiating purchase for listing:", listing);
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const getPriceQuery = new ContractCallQuery()
+      .setContractId(escrowContractAccountId)
+      .setGas(100000)
+      .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(listing.serialNumber));
+
+    const priceQueryResult = await getPriceQuery.execute(userClient);
+    const priceInTinybarsLong = priceQueryResult.getUint256(0);
+
+    if (priceInTinybarsLong.isZero()) {
+      throw new Error("This asset is not currently listed for sale or has a price of zero.");
+    }
+
+    const priceInTinybars = priceInTinybarsLong.toNumber();
+
+    const fundTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(1000000)
+      .setPayableAmount(Hbar.fromTinybars(priceInTinybars))
+      .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(listing.serialNumber));
+
+    const frozenFundTx = await fundTx.freezeWith(userClient);
+    const signedFundTx = await frozenFundTx.sign(userPrivateKey);
+    const fundTxResponse = await signedFundTx.execute(userClient);
+    await fundTxResponse.getReceipt(userClient);
+
+    const listingRef = doc(db, 'listings', listing.id);
+    await updateDoc(listingRef, {
+      status: 'Pending Delivery',
+      buyerAccountId: accountId
+    });
+
+    setFlowState("FUNDED");
+    return fundTxResponse;
+  };
+
   const approveNFTForPool = async (serialNumber) => {
     console.log(`approveNFTForPool: Approving NFT ${assetTokenId} - Serial: ${serialNumber} for pool: ${lendingPoolContractAccountId}`);
 
@@ -402,9 +448,39 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
-  const confirmDelivery = async (listingId) => {
-    const listingRef = doc(db, 'listings', listingId);
-    await updateDoc(listingRef, { status: 'Delivered' });
+  const handleConfirmDelivery = async (serialNumber) => {
+    console.log(`handleConfirmDelivery: Confirming delivery for serial: ${serialNumber}`);
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const confirmTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(1000000)
+      .setFunction("confirmDelivery", new ContractFunctionParameters().addUint256(serialNumber));
+
+    const frozenConfirmTx = await confirmTx.freezeWith(userClient);
+    const signedConfirmTx = await frozenConfirmTx.sign(userPrivateKey);
+    const confirmTxResponse = await signedConfirmTx.execute(userClient);
+    await confirmTxResponse.getReceipt(userClient);
+
+    // After successful on-chain confirmation, update Firestore
+    const listingsRef = collection(db, 'listings');
+    const q = query(listingsRef, where("serialNumber", "==", Number(serialNumber)));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+        const listingDoc = querySnapshot.docs[0];
+        await updateDoc(listingDoc.ref, { status: 'Sold' });
+        console.log(`handleConfirmDelivery: Firestore status updated to 'Sold' for serial: ${serialNumber}`);
+    } else {
+        console.warn(`handleConfirmDelivery: Could not find listing with serial ${serialNumber} in Firestore to update.`);
+    }
+
+    console.log(`handleConfirmDelivery: Delivery confirmed for serial: ${serialNumber}`);
+    return confirmTxResponse;
   };
 
   const updateUserProfile = async (profileData) => {
@@ -451,13 +527,14 @@ export const WalletProvider = ({ children }) => {
     handleTokenAssociation,
     handleMint,
     handleList,
+    handleBuy,
     handleMintAndList,
     approveNFTForPool,
     callTakeLoan,
     callRepayLoan,
     depositLiquidityAsAdmin,
     liquidateLoanAsAdmin,
-    confirmDelivery,
+    handleConfirmDelivery,
     updateUserProfile,
   };
   return (
