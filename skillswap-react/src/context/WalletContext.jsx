@@ -496,10 +496,7 @@ export const WalletProvider = ({ children }) => {
       }
 
       // --- 3. Compute payable amount in wei/weibar units (the unit msg.value expects)
-      // In Escrow.sol: convertToWeibar = tinybar * 10**10
-      // So we must send value = priceTinybars * 10^10 (as BigInt)
-      const TEN_POW_10 = BigInt("10000000000"); // 10^10
-      const priceWeibars = priceTinybars * TEN_POW_10;
+      const priceWeibars = priceTinybars;
       console.log("DEBUG: priceWeibars (weibar BigInt) to send:", priceWeibars.toString());
 
       // --- 5. Recreate/verify signer is correct and use it ---
