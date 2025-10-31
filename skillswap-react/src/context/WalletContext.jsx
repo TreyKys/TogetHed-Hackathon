@@ -459,6 +459,34 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   };
 
+  async function readListingOnchain(client, escrowContractAccountId, serialNumber) {
+    // serialNumber is a JS primitive (number or string). Convert to BigInt string if needed.
+    const query = new ContractCallQuery()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(serialNumber)));
+
+    const result = await query.execute(client);
+
+    // Parse result according to mapping: (address seller, address buyer, uint256 price, uint8 state)
+    const sellerAddress = result.getAddress(0);
+    const buyerAddress = result.getAddress(1);
+    const priceBigNum = result.getUint256(2); // returns a BigNumber-like object (call .toString())
+    const stateNum = Number(result.getUint256(3).toString());
+
+    // Normalize to BigInt string
+    const priceTinybarsStr = priceBigNum.toString(); // string of tinybars
+    const priceTinybarsBigInt = BigInt(priceTinybarsStr);
+
+    return {
+      sellerAddress,
+      buyerAddress,
+      priceTinybarsStr,
+      priceTinybarsBigInt,
+      stateNum
+    };
+  }
+
   const handleWithdraw = async () => {
     const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
     const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
@@ -516,6 +544,7 @@ export const WalletProvider = ({ children }) => {
     liquidateLoanAsAdmin,
     confirmDelivery,
     handleWithdraw,
+    readListingOnchain,
   };
   return (
     <WalletContext.Provider value={value}>

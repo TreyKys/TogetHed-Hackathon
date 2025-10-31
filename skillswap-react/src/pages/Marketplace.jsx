@@ -20,7 +20,7 @@ import {
 import { escrowContractAccountId } from '../hedera.js';
 
 function Marketplace() {
-  const { accountId, privateKey, userProfile, isLoaded, isProfileLoading, setFlowState } = useWallet();
+  const { accountId, privateKey, userProfile, isLoaded, isProfileLoading, setFlowState, readListingOnchain } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Goods & Produce');
@@ -49,100 +49,74 @@ function Marketplace() {
   }, []);
 
 
-  const handleBuyClick = async (listing) => {
-    console.log("handleBuyClick: Initiating purchase for listing:", listing);
-    try {
-      console.log("handleBuyClick: Fetching on-chain price for serial:", listing.serialNumber);
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      const getListingQuery = new ContractCallQuery()
-        .setContractId(escrowContractAccountId)
-        .setGas(100000)
-        .setFunction("listings", new ContractFunctionParameters().addUint256(listing.serialNumber));
-
-      const listingQueryResult = await getListingQuery.execute(userClient);
-      // The price is the 3rd element (index 2) in the returned struct
-      const priceInTinybarsLong = listingQueryResult.getUint256(2);
-      console.log("handleBuyClick: Raw price from contract (Long):", priceInTinybarsLong.toString());
-
-      if (priceInTinybarsLong.isZero()) {
-        console.error("handleBuyClick: On-chain price is zero. Aborting.");
-        throw new Error("This asset is not currently listed for sale or has a price of zero.");
-      }
-
-      const priceInTinybars = priceInTinybarsLong.toNumber();
-      console.log("handleBuyClick: Converted price (Number):", priceInTinybars);
-
-      // Set the selected listing with the definitive on-chain price
-      setSelectedListing({ ...listing, priceInTinybars });
-      setIsModalOpen(true);
-      console.log("handleBuyClick: Opening confirmation modal.");
-
-    } catch (error) {
-      console.error("handleBuyClick: Error during price fetching:", error);
-      setToast({ show: true, message: `Error preparing purchase: ${error.message}` });
-    }
+  const handleBuyClick = (listing) => {
+    setSelectedListing(listing);
+    setIsModalOpen(true);
   };
 
   const executeBuy = async () => {
-    if (!selectedListing) {
-      console.error("executeBuy: Attempted to buy without a selected listing.");
-      return;
-    }
-    console.log("executeBuy: Executing purchase for:", selectedListing);
+    if (!selectedListing) return;
     setIsModalOpen(false);
     setIsTransactionLoading(true);
 
     try {
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+      // 1) Build client with operator (CRITICAL)
+      const buyerPrivateKey = PrivateKey.fromString(privateKey);
+      const buyerAccount = AccountId.fromString(accountId);
+      const client = Client.forTestnet().setOperator(buyerAccount, buyerPrivateKey);
 
-      console.log(`executeBuy: Funding escrow with ${selectedListing.priceInTinybars} tinybars for serial ${selectedListing.serialNumber}`);
+      // 2) Read the canonical on-chain listing
+      const listing = await readListingOnchain(client, escrowContractAccountId, selectedListing.serialNumber);
+      console.log("ONCHAIN LISTING:", listing);
 
-      const fundTx = new ContractExecuteTransaction()
+      if (listing.stateNum !== 0) { // 0 = LISTED
+        throw new Error("Escrow: Asset is not listed for sale.");
+      }
+
+      // 3) Convert priceTinybars -> Hbar for SDK .setPayableAmount
+      const payableHbar = Hbar.fromTinybars(listing.priceTinybarsStr);
+
+      // Defensive logging
+      console.log("DEBUG: buyerAccount:", buyerAccount.toString());
+      console.log("DEBUG: signer/key present:", !!privateKey);
+      console.log("DEBUG: nftSerialNumber (primitive):", selectedListing.serialNumber, typeof selectedListing.serialNumber);
+      console.log("DEBUG: listing.priceTinybarsStr:", listing.priceTinybarsStr);
+      console.log("DEBUG: listing.stateNum:", listing.stateNum);
+      console.log("DEBUG: payableHbar.toString():", payableHbar.toString());
+
+      // 4) Build ContractExecuteTransaction using Hedera SDK
+      const tx = await new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
-        .setGas(1000000)
-        .setPayableAmount(Hbar.fromTinybars(selectedListing.priceInTinybars))
-        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(selectedListing.serialNumber));
+        .setGas(300000)
+        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(BigInt(selectedListing.serialNumber)))
+        .setPayableAmount(payableHbar)
+        .execute(client);
 
-      const frozenFundTx = await fundTx.freezeWith(userClient);
-      const signedFundTx = await frozenFundTx.sign(userPrivateKey);
-      const fundTxResponse = await signedFundTx.execute(userClient);
-      console.log("executeBuy: Transaction submitted. Waiting for receipt...");
-      await fundTxResponse.getReceipt(userClient);
-      console.log("executeBuy: Transaction confirmed.");
+      console.log("DEBUG: fundEscrow tx id:", tx.transactionId.toString());
+      const receipt = await tx.getReceipt(client);
+      console.log("DEBUG: fundEscrow receipt status:", receipt.status.toString());
+
+      if (receipt.status.toString() !== "SUCCESS") {
+        throw new Error(`Purchase failed, receipt status: ${receipt.status.toString()}`);
+      }
 
       // Update Firestore document to 'Pending Delivery'
-      console.log("executeBuy: Updating Firestore status to 'Pending Delivery' for listing ID:", selectedListing.id);
       const listingRef = doc(db, 'listings', selectedListing.id);
       await updateDoc(listingRef, {
         status: 'Pending Delivery',
         buyerAccountId: accountId
       });
-      console.log("executeBuy: Firestore status updated.");
 
       setPurchasedItemName(selectedListing.name);
       setFlowState("FUNDED");
-      setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: fundTxResponse.transactionId.toString() });
+      setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: tx.transactionId.toString() });
 
-    } catch (error) {
-      console.error("executeBuy: Full error object:", error);
-      let errorMessage = error.message;
-      if (error.status) {
-         errorMessage = `Transaction failed with status: ${error.status.toString()}`;
-      } else if (error.message.includes('insufficient')) {
-         errorMessage = 'Insufficient account balance to complete the purchase.';
-      }
-      setToast({ show: true, message: `Purchase Failed: ${errorMessage}` });
+    } catch (err) {
+      console.error("Buy failed, debug object:", err);
+      setToast({ show: true, message: `Purchase Failed: ${err.message}` });
     } finally {
       setIsTransactionLoading(false);
-      setSelectedListing(null); // Clear selected listing after the attempt
-      console.log("executeBuy: Purchase flow finished.");
+      setSelectedListing(null);
     }
   };
 
