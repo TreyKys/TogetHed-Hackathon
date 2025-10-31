@@ -435,6 +435,47 @@ export const WalletProvider = ({ children }) => {
     await updateDoc(listingRef, { status: 'Delivered' });
   };
 
+  const handleBuy = async (listing) => {
+    console.log("handleBuy: Initiating purchase for listing:", listing);
+    if (!listing || !listing.serialNumber || !listing.price) {
+      throw new Error("Invalid listing data provided to handleBuy.");
+    }
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const fundEscrowTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000) // Increased gas for safety
+      .setFunction("fundEscrow", new ContractFunctionParameters()
+        .addUint256(listing.serialNumber)
+      )
+      .setPayableAmount(Hbar.fromTinybars(listing.price));
+
+    const frozenTx = await fundEscrowTx.freezeWith(client);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(client);
+
+    // Wait for the transaction to be confirmed on the network
+    const receipt = await txResponse.getReceipt(client);
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      throw new Error(`Funding escrow failed with status: ${receipt.status.toString()}`);
+    }
+
+    // After successful on-chain transaction, update Firestore
+    const listingRef = doc(db, 'listings', listing.id);
+    await updateDoc(listingRef, {
+      status: 'Funded',
+      buyerAccountId: accountId,
+    });
+
+    console.log("handleBuy: Purchase successful and Firestore updated.");
+    return receipt;
+  };
+
   const value = {
     accountId,
     evmAddress,
@@ -458,6 +499,7 @@ export const WalletProvider = ({ children }) => {
     depositLiquidityAsAdmin,
     liquidateLoanAsAdmin,
     confirmDelivery,
+    handleBuy,
   };
   return (
     <WalletContext.Provider value={value}>
