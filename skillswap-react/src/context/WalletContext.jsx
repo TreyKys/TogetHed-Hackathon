@@ -11,6 +11,7 @@ import {
   NftId,
   ContractExecuteTransaction,
   ContractFunctionParameters,
+  ContractCallQuery,
   Hbar,
   AccountBalanceQuery
 } from '@hashgraph/sdk';
