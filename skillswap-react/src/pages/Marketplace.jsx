@@ -60,31 +60,42 @@ function Marketplace() {
     setIsTransactionLoading(true);
 
     try {
-      // 1) Build client with operator (CRITICAL)
-      const buyerPrivateKey = PrivateKey.fromString(privateKey);
-      const buyerAccount = AccountId.fromString(accountId);
-      const client = Client.forTestnet().setOperator(buyerAccount, buyerPrivateKey);
+      // 0. sanity
+      if (!accountId) throw new Error("No accountId in state");
+      const storedKey = localStorage.getItem('integro-private-key');
+      if (!storedKey) throw new Error("No private key in localStorage");
 
-      // 2) Read the canonical on-chain listing
-      const listing = await readListingOnchain(client, escrowContractAccountId, selectedListing.serialNumber);
-      console.log("ONCHAIN LISTING:", listing);
+      // 1. build buyer client (operator MUST be set)
+      const buyerPrivateKey = PrivateKey.fromString(storedKey);
+      const buyerAccountId = AccountId.fromString(accountId);
+      const client = Client.forTestnet().setOperator(buyerAccountId, buyerPrivateKey);
 
-      if (listing.stateNum !== 0) { // 0 = LISTED
-        throw new Error("Escrow: Asset is not listed for sale.");
-      }
+      // 2. verify serial is present
+      if (selectedListing.serialNumber == null) throw new Error("No nftSerialNumber set");
 
-      // 3) Convert priceTinybars -> Hbar for SDK .setPayableAmount
-      const payableHbar = Hbar.fromTinybars(listing.priceTinybarsStr);
+      // 3. read canonical listing on-chain (price stored in tinybars)
+      const query = new ContractCallQuery()
+        .setContractId(escrowContractAccountId)         // 0.0.x (contract account)
+        .setGas(200000)
+        .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(selectedListing.serialNumber)));
 
-      // Defensive logging
-      console.log("DEBUG: buyerAccount:", buyerAccount.toString());
-      console.log("DEBUG: signer/key present:", !!privateKey);
-      console.log("DEBUG: nftSerialNumber (primitive):", selectedListing.serialNumber, typeof selectedListing.serialNumber);
-      console.log("DEBUG: listing.priceTinybarsStr:", listing.priceTinybarsStr);
-      console.log("DEBUG: listing.stateNum:", listing.stateNum);
-      console.log("DEBUG: payableHbar.toString():", payableHbar.toString());
+      const result = await query.execute(client);
 
-      // 4) Build ContractExecuteTransaction using Hedera SDK
+      // Parse listing: seller (0), buyer (1), price (2), state (3)
+      const sellerAddr = result.getAddress(0);
+      const buyerAddr = result.getAddress(1);
+      const priceTinybarsStr = result.getUint256(2).toString(); // IMPORTANT: string
+      const stateNum = Number(result.getUint256(3).toString());
+
+      console.log("DEBUG onchain listing:", { sellerAddr, buyerAddr, priceTinybarsStr, stateNum });
+
+      if (stateNum !== 0) throw new Error("Escrow: Asset is not listed for sale.");
+
+      // 4. compute payable amount as Hbar from tinybars (safe)
+      const payableHbar = Hbar.fromTinybars(priceTinybarsStr); // accepts string
+      console.log("DEBUG payableHbar:", payableHbar.toString());
+
+      // 5. execute fundEscrow contract call
       const tx = await new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
         .setGas(300000)
@@ -92,15 +103,10 @@ function Marketplace() {
         .setPayableAmount(payableHbar)
         .execute(client);
 
-      console.log("DEBUG: fundEscrow tx id:", tx.transactionId.toString());
       const receipt = await tx.getReceipt(client);
-      console.log("DEBUG: fundEscrow receipt status:", receipt.status.toString());
+      console.log("DEBUG fundEscrow receipt:", receipt.status.toString());
+      if (receipt.status.toString() !== "SUCCESS") throw new Error("Purchase failed: " + receipt.status.toString());
 
-      if (receipt.status.toString() !== "SUCCESS") {
-        throw new Error(`Purchase failed, receipt status: ${receipt.status.toString()}`);
-      }
-
-      // Update Firestore document to 'Pending Delivery'
       const listingRef = doc(db, 'listings', selectedListing.id);
       await updateDoc(listingRef, {
         status: 'Pending Delivery',
@@ -111,12 +117,11 @@ function Marketplace() {
       setFlowState("FUNDED");
       setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: tx.transactionId.toString() });
 
-    } catch (err) {
-      console.error("Buy failed, debug object:", err);
-      setToast({ show: true, message: `Purchase Failed: ${err.message}` });
+    } catch (error) {
+      console.error("Purchase failed:", error);
+      setToast({ show: true, message: `Purchase Failed: ${error.message}` });
     } finally {
       setIsTransactionLoading(false);
-      setSelectedListing(null);
     }
   };
 
