@@ -5,7 +5,7 @@ import './ProfileSetupModal.css';
 const setUserProfileUrl = "https://us-central1-integro-ecosystem.cloudfunctions.net/setUserProfile";
 
 const ProfileSetupModal = ({ onProfileComplete }) => {
-    const { accountId, setProfile } = useWallet();
+    const { accountId, refreshUserProfile } = useWallet();
     const [displayName, setDisplayName] = useState('');
     const [role, setRole] = useState('');
     const [location, setLocation] = useState('');
@@ -34,8 +34,7 @@ const ProfileSetupModal = ({ onProfileComplete }) => {
                 throw new Error(errorData.error || 'Failed to save profile.');
             }
 
-            const profileData = { displayName, role, location };
-            setProfile(profileData);
+            await refreshUserProfile();
 
             setStatus('✅ Profile saved successfully!');
             onProfileComplete();
