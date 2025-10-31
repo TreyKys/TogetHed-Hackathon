@@ -73,8 +73,8 @@ function Marketplace() {
         throw new Error("This asset is not currently listed for sale or has a price of zero.");
       }
 
-      const priceInTinybars = priceInTinybarsLong.toString();
-      console.log("handleBuyClick: Converted price (String):", priceInTinybars);
+      const priceInTinybars = priceInTinybarsLong.toNumber();
+      console.log("handleBuyClick: Converted price (Number):", priceInTinybars);
 
       // Set the selected listing with the definitive on-chain price
       setSelectedListing({ ...listing, priceInTinybars });
