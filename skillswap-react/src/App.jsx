@@ -15,6 +15,7 @@ import TakeLoan from './pages/Finance/TakeLoan.jsx';
 import MyLoans from './pages/Finance/MyLoans.jsx';
 import DepositLiquidity from './pages/Finance/DepositLiquidity.jsx';
 import RepayLoan from './pages/Finance/RepayLoan.jsx';
+import ProfilePage from './pages/ProfilePage.jsx';
 
 function App() {
   return (
@@ -58,6 +59,7 @@ const ProtectedRoutes = () => {
         <Route path="/deposit-liquidity" element={<DepositLiquidity />} />
         <Route path="/repay-loan" element={<RepayLoan />} />
         <Route path="/agent-staking" element={<AgentStaking />} />
+        <Route path="/profile" element={<ProfilePage />} />
         {/* Add other protected routes here */}
         <Route path="*" element={<Navigate to="/marketplace" />} />
       </Routes>

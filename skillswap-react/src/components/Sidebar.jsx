@@ -40,7 +40,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                     </ul>
                     <h4 className="menu-header">PROFILE & ACCOUNT</h4>
                     <ul>
-                        <li><Link to="/profile-setup" onClick={onClose}><ProfileIcon /> User Profile</Link></li>
+                        <li><Link to="/profile" onClick={onClose}><ProfileIcon /> User Profile</Link></li>
                         <li><Link to="/my-assets" onClick={onClose}><AssetsIcon /> My Assets</Link></li>
                     </ul>
                     <h4 className="menu-header">SPECIAL FEATURE</h4>
