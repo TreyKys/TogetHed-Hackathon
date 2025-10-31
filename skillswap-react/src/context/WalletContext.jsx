@@ -34,6 +34,7 @@ export const WalletProvider = ({ children }) => {
   const [hbarBalance, setHbarBalance] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [flowState, setFlowState] = useState('INITIAL');
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
 
@@ -78,6 +79,7 @@ export const WalletProvider = ({ children }) => {
 
   const fetchUserProfile = useCallback(async () => {
     if (accountId) {
+      setIsProfileLoading(true);
       console.log("WalletContext: Fetching user profile for", accountId);
       const userDocRef = doc(db, 'users', accountId);
       const userDocSnap = await getDoc(userDocRef);
@@ -88,6 +90,7 @@ export const WalletProvider = ({ children }) => {
         console.log("WalletContext: User profile not found.");
         setUserProfile(null);
       }
+      setIsProfileLoading(false);
     }
   }, [accountId]);
 
@@ -425,6 +428,7 @@ export const WalletProvider = ({ children }) => {
     hbarBalance,
     isLoaded,
     userProfile,
+    isProfileLoading,
     flowState,
     nftSerialNumber,
     createVault,
@@ -438,7 +442,13 @@ export const WalletProvider = ({ children }) => {
     callTakeLoan,
     callRepayLoan,
     depositLiquidityAsAdmin,
-    liquidateLoanAsAdmin
+    liquidateLoanAsAdmin,
+    confirmDelivery,
+  };
+
+  const confirmDelivery = async (listingId) => {
+    const listingRef = doc(db, 'listings', listingId);
+    await updateDoc(listingRef, { status: 'Delivered' });
   };
 
   return (

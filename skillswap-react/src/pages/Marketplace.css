@@ -124,3 +124,19 @@
     background-color: #2DD87F;
     color: #121212;
 }
+
+@media (max-width: 768px) {
+    .marketplace-container {
+        padding: 1rem;
+    }
+
+    .marketplace-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .listings-grid {
+        grid-template-columns: 1fr;
+    }
+}

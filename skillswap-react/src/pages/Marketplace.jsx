@@ -21,7 +21,7 @@ import {
 import { escrowContractAccountId } from '../hedera.js';
 
 function Marketplace() {
-  const { accountId, privateKey, userProfile, isLoaded, setFlowState } = useWallet();
+  const { accountId, privateKey, userProfile, isLoaded, isProfileLoading, setFlowState } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -29,6 +29,7 @@ function Marketplace() {
   const [toast, setToast] = useState({ show: false, message: '', txHash: '' });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedListing, setSelectedListing] = useState(null);
+  const [purchasedItemName, setPurchasedItemName] = useState('');
   const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -44,13 +45,13 @@ function Marketplace() {
   }, []);
 
   useEffect(() => {
-    // Show the profile modal if the user is loaded and doesn't have a profile
-    if (isLoaded && userProfile === null) {
+    // Wait until the profile is done loading to check if the modal should be shown
+    if (!isProfileLoading && userProfile === null) {
       setShowProfileModal(true);
-    } else if (userProfile) {
+    } else {
       setShowProfileModal(false);
     }
-  }, [isLoaded, userProfile]);
+  }, [isProfileLoading, userProfile]);
 
   const handleProfileComplete = () => {
     setShowProfileModal(false);
@@ -126,11 +127,15 @@ function Marketplace() {
       // Update Firestore document to 'Pending Delivery'
       console.log("executeBuy: Updating Firestore status to 'Pending Delivery' for listing ID:", selectedListing.id);
       const listingRef = doc(db, 'listings', selectedListing.id);
-      await updateDoc(listingRef, { status: 'Pending Delivery' });
+      await updateDoc(listingRef, {
+        status: 'Pending Delivery',
+        buyerAccountId: accountId
+      });
       console.log("executeBuy: Firestore status updated.");
 
+      setPurchasedItemName(selectedListing.name);
       setFlowState("FUNDED");
-      setToast({ show: true, message: 'Purchase Successful! Escrow is funded.', txHash: fundTxResponse.transactionId.toString() });
+      setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: fundTxResponse.transactionId.toString() });
 
     } catch (error) {
       console.error("executeBuy: Full error object:", error);
@@ -191,7 +196,9 @@ function Marketplace() {
           ))}
         </div>
 
-        {isLoading ? (
+        {isProfileLoading ? (
+          <p>Loading profile...</p>
+        ) : isLoading ? (
           <p>Loading listings...</p>
         ) : (
           <motion.div
