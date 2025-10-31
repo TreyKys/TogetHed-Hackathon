@@ -78,9 +78,14 @@ export const WalletProvider = ({ children }) => {
   }, [accountId, fetchBalance]);
 
   const fetchUserProfile = useCallback(async () => {
-    if (accountId) {
-      setIsProfileLoading(true);
-      console.log("WalletContext: Fetching user profile for", accountId);
+    if (!accountId) {
+      // If there's no accountId, there's no profile to fetch.
+      setIsProfileLoading(false);
+      return;
+    }
+    setIsProfileLoading(true);
+    console.log("WalletContext: Fetching user profile for", accountId);
+    try {
       const userDocRef = doc(db, 'users', accountId);
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
@@ -90,14 +95,18 @@ export const WalletProvider = ({ children }) => {
         console.log("WalletContext: User profile not found.");
         setUserProfile(null);
       }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      setUserProfile(null);
+    } finally {
       setIsProfileLoading(false);
     }
   }, [accountId]);
 
-  // On component mount, try to load the wallet from localStorage
+  // Fetch profile whenever accountId changes.
   useEffect(() => {
     fetchUserProfile();
-  }, [accountId, fetchUserProfile]);
+  }, [fetchUserProfile]);
 
   const refreshUserProfile = async () => {
     await fetchUserProfile();
@@ -421,6 +430,11 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
+  const confirmDelivery = async (listingId) => {
+    const listingRef = doc(db, 'listings', listingId);
+    await updateDoc(listingRef, { status: 'Delivered' });
+  };
+
   const value = {
     accountId,
     evmAddress,
@@ -445,12 +459,6 @@ export const WalletProvider = ({ children }) => {
     liquidateLoanAsAdmin,
     confirmDelivery,
   };
-
-  const confirmDelivery = async (listingId) => {
-    const listingRef = doc(db, 'listings', listingId);
-    await updateDoc(listingRef, { status: 'Delivered' });
-  };
-
   return (
     <WalletContext.Provider value={value}>
       {children}
