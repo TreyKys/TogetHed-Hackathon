@@ -143,7 +143,7 @@ function Marketplace() {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onConfirm={executeBuy}
-          priceInHbar={Hbar.fromTinybars(selectedListing.priceInTinybars).toString()}
+          priceInHbar={Hbar.fromTinybars(selectedListing.price).toString()}
         />
       )}
       <main className="marketplace-content">
