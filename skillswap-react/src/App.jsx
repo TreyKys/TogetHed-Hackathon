@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import {
-  PrivateKey,
-  AccountId,
-  Client,
+  getClientForAccount,
+  ESCROW_CONTRACT_ACCOUNT_ID,
+  ASSET_TOKEN_ID,
   TokenAssociateTransaction,
   AccountAllowanceApproveTransaction,
   TokenId,
@@ -11,13 +11,18 @@ import {
   ContractExecuteTransaction,
   ContractFunctionParameters,
   ContractCallQuery,
-  Hbar
-} from '@hashgraph/sdk';
-import {
-  escrowContractAddress,
-  escrowContractAccountId,
-  assetTokenId,
+  Hbar,
+  AccountId,
+  PrivateKey,
 } from './hedera.js';
+import {
+  saveMintedAssetToFirestore,
+  saveListingToFirestore,
+  updateListingStateInFirestore,
+  writeTxToFirestore,
+  transferAssetOwnerInFirestore
+} from './firestoreHelpers.js';
+
 
 // ⚠️ ACTION REQUIRED: Replace this placeholder with your real deployed function URL
 const cloudFunctionUrl = "https://createaccount-cehqwvb4aq-uc.a.run.app";
@@ -43,11 +48,7 @@ function App() {
       if (storedKey && storedAccountId && storedEvmAddress) {
         try {
           setStatus("Restoring your secure vault...");
-          const provider = getProvider();
 
-          const normalizedKey = storedKey.startsWith("0x") ? storedKey : "0x" + storedKey;
-          // Use ethers directly for ECDSA key — do not convert via Hashgraph PrivateKey
-          // We no longer need to create a signer, just load the account info
           console.log("Wallet details found in localStorage. Restoring session.");
 
           setAccountId(storedAccountId);
@@ -67,354 +68,211 @@ function App() {
   // --- Create a new wallet via the Account Factory ---
   const handleCreateVault = async () => {
     setIsProcessing(true);
-    setStatus("1/2: Calling the secure Account Factory...");
     try {
-      // 1. Call our backend to create the account on Hedera
+      setStatus("Generating keys & calling Account Factory...");
+      // The frontend should post the public key only if you generate keys here.
+      // Assuming frontend does NOT generate private key - keep your existing pattern.
       const response = await fetch(cloudFunctionUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ /* if you send publicKey, send it here */ })
       });
-
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Backend request failed.');
-      }
+      if (!response.ok) throw new Error(data.error || "createAccount failed");
+      const { accountId, privateKey, evmAddress } = data;
+      localStorage.setItem("integro-account-id", accountId);
+      localStorage.setItem("integro-private-key", privateKey);
+      localStorage.setItem("integro-evm-address", evmAddress || "");
 
-      const { accountId, privateKey, evmAddress: backendEvm } = data;
+      // Minimal client-side validation
+      const client = getClientForAccount(accountId, privateKey);
 
-      // 2. Save everything to localStorage and update state
-      setStatus("2/2: Finalizing your vault...");
-      // ensure privateKey is 0x-prefixed
-      const normalizedPriv = privateKey.startsWith("0x") ? privateKey : "0x" + privateKey;
+      // TODO: store profile skeleton in Firestore via helper...
 
-      // The backend now returns the canonical EVM address.
-      localStorage.setItem('integro-private-key', normalizedPriv);
-      localStorage.setItem('integro-account-id', accountId);
-      localStorage.setItem('integro-evm-address', backendEvm);
-
-      // set states
       setAccountId(accountId);
-      setEvmAddress(backendEvm);
-
-
-      // Display credentials to user once for backup
-      alert(
-        `Vault Created Successfully!\n\nPlease back up these details securely:\n
-        Account ID: ${accountId}\n
-        Private Key: ${normalizedPriv}\n
-        EVM Address: ${backendEvm}`
-       );
-
-      setStatus(`✅ Secure vault created! Your Account ID: ${accountId}`);
-
-    } catch (error) {
-      console.error("Vault creation failed:", error);
-      setStatus(`❌ Vault creation failed: ${error.message}`);
+      setEvmAddress(evmAddress);
+      setStatus(`Vault created: ${accountId}`);
+    } catch (err) {
+      console.error("Vault creation failed:", err);
+      setStatus(`Vault creation failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // --- Token Association Function ---
-  const handleTokenAssociation = async (accountId, privateKey) => {
-    try {
-      // NOTE: Hedera SDK requires the raw private key *without* the 0x prefix.
-      const rawPrivateKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      setStatus("⏳ Associating token with your account...");
-      const associateTx = await new TokenAssociateTransaction()
-        .setAccountId(userAccountId)
-        .setTokenIds([assetTokenId])
-        .freezeWith(userClient);
-
-      const associateSign = await associateTx.sign(userPrivateKey);
-      const associateSubmit = await associateSign.execute(userClient);
-
-      try {
-        const associateReceipt = await associateSubmit.getReceipt(userClient);
-        if (associateReceipt.status.toString() === 'SUCCESS') {
-          setStatus("✅ Token association successful!");
-          console.log("Token Association Successful!");
-        } else {
-          console.error("ASSOCIATION FAILED:", associateReceipt);
-          throw new Error(`Token Association Failed with status: ${associateReceipt.status.toString()}`);
-        }
-      } catch (err) {
-        if (err.message.includes('TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT')) {
-          setStatus("✅ Token already associated.");
-          console.log("Token already associated.");
-        } else {
-          throw err;
-        }
-      }
-
-      userClient.close();
-    } catch (error) {
-      console.error("Token association failed:", error);
-      throw error;
-    }
-  };
-
   const handleMint = async () => {
-    // 1. Load User Credentials
-    const storedKey = localStorage.getItem('integro-private-key');
-    const storedAccountId = localStorage.getItem('integro-account-id');
-
-    if (!storedKey || !storedAccountId) {
-      alert("Vault not found. Please create a vault first.");
-      return;
-    }
-
     setIsTransactionLoading(true);
-    setStatus("🚀 Minting RWA NFT...");
-
     try {
-      // 2. Ensure Token Association (in case it wasn't done during vault creation)
-      setStatus("⏳ 1/3: Ensuring token association...");
-      await handleTokenAssociation(storedAccountId, storedKey);
+      const accountId = localStorage.getItem("integro-account-id");
+      const privateKey = localStorage.getItem("integro-private-key");
+      if (!accountId || !privateKey) throw new Error("Vault missing");
 
-      // 3. Backend Mint Request
-      setStatus("⏳ 2/3: Calling secure backend to mint...");
-      const response = await fetch(mintRwaViaUssdUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const resp = await fetch(mintRwaViaUssdUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: storedAccountId,
+          accountId,
           assetType: "Yam Harvest Future",
           quality: "Grade A",
           location: "Ikorodu, Nigeria"
-        }),
+        })
       });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "mint failed");
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Backend minting request failed.');
-      }
-
-      // 4. Handle Backend Response
-      console.log("Backend Response:", data);
-      const { tokenId: receivedTokenId, serialNumber } = data;
-
-      if (receivedTokenId !== assetTokenId) {
-        console.warn(`Warning: Token ID from backend (${receivedTokenId}) does not match expected ID (${assetTokenId}).`);
-      }
-
-      setAssetTokenIdState(receivedTokenId);
+      const { tokenId, serialNumber } = data;
+      // Persist canonical minted asset in Firestore
+      await saveMintedAssetToFirestore({ tokenId, serialNumber, owner: accountId });
+      setAssetTokenIdState(tokenId);
       setNftSerialNumber(serialNumber);
-      setFlowState('MINTED');
-      setStatus(`✅ NFT Minted! Serial Number: ${serialNumber}`);
-
-    } catch (error) {
-      console.error("Minting failed:", error);
-      setStatus(`❌ Minting Failed: ${error.message}`);
+      setFlowState("MINTED");
+      setStatus(`NFT minted: ${serialNumber}`);
+    } catch (err) {
+      console.error("Minting failed:", err);
+      setStatus(`Mint failed: ${err.message}`);
     } finally {
       setIsTransactionLoading(false);
     }
   };
 
-  const handleList = async () => {
+  const handleList = async (priceInHBAR) => {
     setIsTransactionLoading(true);
-    setStatus("🚀 Listing NFT for sale...");
-
     try {
-      const storedKey = localStorage.getItem('integro-private-key');
-      if (!storedKey) throw new Error('No private key found in localStorage.');
+      const storedKey = localStorage.getItem("integro-private-key");
+      const storedAccountId = localStorage.getItem("integro-account-id");
+      if (!storedKey || !storedAccountId) throw new Error("Vault missing");
+      if (!assetTokenIdState || nftSerialNumber == null) throw new Error("No NFT to list");
 
-      // 1. SDK NFT Approval
-      console.log("Step 1: SDK NFT Approval");
-      setStatus("⏳ 1/3: Creating SDK client...");
-
-      // NOTE: Hedera SDK requires the raw private key *without* the 0x prefix.
-      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
-
-      if (!accountId) throw new Error('No accountId available in state.');
-      const userAccountId = AccountId.fromString(accountId);
-
-      const userClient = Client.forTestnet();
-      userClient.setOperator(userAccountId, userPrivateKey);
-
-      setStatus("⏳ 2/3: Building & signing native approval...");
-
-      if (!assetTokenIdState) throw new Error('No assetTokenIdState set.');
-      if (nftSerialNumber == null) throw new Error('No nftSerialNumber set.');
-
+      // 1) Native SDK NFT allowance approval (as you already do)
+      const client = getClientForAccount(storedAccountId, storedKey);
       const tokenIdObj = TokenId.fromString(assetTokenIdState);
       const nftIdObj = new NftId(tokenIdObj, Number(nftSerialNumber));
-
       const allowanceTx = new AccountAllowanceApproveTransaction()
-        .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
+        .approveTokenNftAllowance(nftIdObj, AccountId.fromString(storedAccountId), ESCROW_CONTRACT_ACCOUNT_ID)
+        .freezeWith(client);
+      const signedAllowance = await allowanceTx.signWithOperator(client);
+      const allowanceResp = await (await signedAllowance.execute(client)).getReceipt(client);
+      if (allowanceResp.status.toString() !== "SUCCESS") throw new Error("Approval failed");
 
-      const frozenTx = await allowanceTx.freezeWith(userClient);
-      const signedTx = await frozenTx.sign(userPrivateKey);
-      const txResponse = await signedTx.execute(userClient);
-      const receipt = await txResponse.getReceipt(userClient);
+      // 2) Convert priceInHBAR (float/number) to tinybars string
+      // priceInHBAR should be number like 50 (HBAR)
+      const priceTinybarsStr = String(Math.round(priceInHBAR * 1e8)); // careful: no float math for large numbers in production; use BigInt if needed
 
-      if (receipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`SDK Approval Failed: ${receipt.status.toString()}`);
-      }
-      console.log("SDK Approval successful!");
-      setStatus("✅ SDK Approval Successful!");
-
-      // 2. Prepare and Execute Contract Call
-      console.log("Step 2: Preparing EVM call parameters");
-      setStatus("⏳ 3/3: Preparing to list on marketplace...");
-
-      // The user enters the price in HBAR, and we convert it to the smallest unit (tinybars)
-      // The contract will treat this value as wei.
-      const priceInHbar = 50;
-      const priceInWei = Hbar.from(priceInHbar).toTinybars();
-      console.log(`Listing NFT for ${priceInHbar} HBAR, which is ${priceInWei.toString()} in the smallest unit (tinybars/wei).`);
-
-      const listAssetTx = new ContractExecuteTransaction()
-        .setContractId(escrowContractAccountId)
-        .setGas(1000000) // Adjust gas as needed
+      // 3) Contract call to list
+      const tx = await new ContractExecuteTransaction()
+        .setContractId(ESCROW_CONTRACT_ACCOUNT_ID)
+        .setGas(300000)
         .setFunction("listAsset", new ContractFunctionParameters()
-          .addUint256(nftSerialNumber)
-          .addUint256(priceInWei) // Pass the price in the native unit
-        );
+          .addUint256(BigInt(nftSerialNumber)) // tokenId/serial as uint256
+          .addUint256(BigInt(priceTinybarsStr)) // price in tinybars
+        )
+        .execute(client);
 
-      const frozenListTx = await listAssetTx.freezeWith(userClient);
-      const signedListTx = await frozenListTx.sign(userPrivateKey);
-      const listTxResponse = await signedListTx.execute(userClient);
-      const listReceipt = await listTxResponse.getReceipt(userClient);
+      const receipt = await tx.getReceipt(client);
+      if (receipt.status.toString() !== "SUCCESS") throw new Error("listAsset failed");
 
-      if (listReceipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Native listAsset call failed: ${listReceipt.status.toString()}`);
-      }
+      // 4) Persist listing in Firestore (canonical from on-chain)
+      await saveListingToFirestore({
+        tokenId: assetTokenIdState,
+        serialNumber: nftSerialNumber,
+        seller: storedAccountId,
+        priceTinybars: priceTinybarsStr,
+        contractTxId: tx.transactionId.toString()
+      });
 
-      // 3. Update State
       setFlowState("LISTED");
-      setStatus(`✅ NFT Listed for 50 HBAR!`);
-      console.log("Listing successful!");
-
-    } catch (error) {
-      console.error("Listing failed:", error);
-      const currentAddress = signer ? await signer.getAddress() : "null";
-      setStatus(`❌ Listing Failed: ${error.message} (Signer: ${currentAddress})`);
+      setStatus("Listed successfully!");
+    } catch (err) {
+      console.error("Listing failed:", err);
+      setStatus(`Listing failed: ${err.message}`);
     } finally {
       setIsTransactionLoading(false);
     }
   };
 
   const handleBuy = async () => {
-    if (!accountId || !nftSerialNumber) return alert("No item listed for sale.");
     setIsTransactionLoading(true);
-    setStatus("🚀 Buying NFT (Funding Escrow)...");
     try {
-      const storedKey = localStorage.getItem('integro-private-key');
-      if (!storedKey) throw new Error('No private key found in localStorage.');
+      const storedKey = localStorage.getItem("integro-private-key");
+      const storedAccountId = localStorage.getItem("integro-account-id");
+      if (!storedKey || !storedAccountId) throw new Error("Vault missing");
+      if (!assetTokenIdState || nftSerialNumber == null) throw new Error("Missing NFT details");
 
-      // Setup client
-      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-      console.log("[handleBuy] Client created for buyer:", userAccountId.toString());
+      const client = getClientForAccount(storedAccountId, storedKey);
 
-      // 1. Get the exact listing price from the contract
-      console.log("[handleBuy] Step 1: Fetching listing price for serial #", nftSerialNumber);
-      const getPriceQuery = new ContractCallQuery()
-        .setContractId(escrowContractAccountId)
-        .setGas(100000) // Gas for a view function is typically low
-        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(nftSerialNumber));
+      // 1) Read canonical listing on-chain (do not use Firestore)
+      const callQuery = new ContractCallQuery()
+        .setContractId(ESCROW_CONTRACT_ACCOUNT_ID)
+        .setGas(200000)
+        .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(nftSerialNumber)));
+      const result = await callQuery.execute(client);
 
-      const priceQueryResult = await getPriceQuery.execute(userClient);
-      const priceInWei = priceQueryResult.getUint256(0);
-      console.log(`[handleBuy] Contract returned price: ${priceInWei.toString()} in the smallest unit (tinybars/wei).`);
+      const priceTinybarsStr = result.getUint256(2).toString(); // index 2 = price
+      const stateNum = Number(result.getUint256(3).toString()); // index 3 = state
+      if (stateNum !== 0) throw new Error("Escrow: Asset is not listed for sale.");
 
-      if (priceInWei.isZero()) {
-        throw new Error("Could not retrieve a valid price for this NFT. It may not be listed.");
-      }
+      // 2) Convert tinybars to Hbar and execute fundEscrow with setPayableAmount
+      const payableHbar = Hbar.fromTinybars(priceTinybarsStr);
+      const tx = await new ContractExecuteTransaction()
+        .setContractId(ESCROW_CONTRACT_ACCOUNT_ID)
+        .setGas(300000)
+        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(BigInt(nftSerialNumber)))
+        .setPayableAmount(payableHbar)
+        .execute(client);
 
-      const payableAmount = Hbar.fromTinybars(priceInWei);
-      console.log(`[handleBuy] Payable amount calculated: ${payableAmount.toString()}`);
+      // 3) Wait for receipt & verify success
+      const receipt = await tx.getReceipt(client);
+      if (receipt.status.toString() !== "SUCCESS") throw new Error("Funding failed: " + receipt.status.toString());
 
-      // 2. Create and execute the funding transaction with the exact price
-      console.log("[handleBuy] Step 2: Building and sending the fundEscrow transaction...");
-      const fundTx = new ContractExecuteTransaction()
-        .setContractId(escrowContractAccountId)
-        .setGas(1000000)
-        .setPayableAmount(payableAmount)
-        .setFunction("fundEscrow", new ContractFunctionParameters()
-          .addUint256(nftSerialNumber)
-        );
-
-      const frozenFundTx = await fundTx.freezeWith(userClient);
-      const signedFundTx = await frozenFundTx.sign(userPrivateKey);
-      console.log("[handleBuy] Transaction signed by buyer.");
-      const fundTxResponse = await signedFundTx.execute(userClient);
-      console.log("[handleBuy] Transaction submitted. TX ID:", fundTxResponse.transactionId.toString());
-
-      console.log("[handleBuy] Awaiting transaction receipt...");
-      const fundReceipt = await fundTxResponse.getReceipt(userClient);
-      console.log("[handleBuy] Receipt received. Status:", fundReceipt.status.toString());
-
-      if (fundReceipt.status.toString() !== 'SUCCESS') {
-        console.error("[handleBuy] Full receipt:", JSON.stringify(fundReceipt, null, 2));
-        throw new Error(`Native fundEscrow call failed: ${fundReceipt.status.toString()}`);
-      }
+      // 4) Persist payment to Firestore and mark listing as FUNDED (state)
+      await writeTxToFirestore({
+        txId: tx.transactionId.toString(),
+        action: "fundEscrow",
+        tokenId: assetTokenIdState,
+        serialNumber: nftSerialNumber,
+        buyer: storedAccountId,
+        paidTinybars: priceTinybarsStr
+      });
+      await updateListingStateInFirestore(assetTokenIdState, nftSerialNumber, "FUNDED");
 
       setFlowState("FUNDED");
-      setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
-
-    } catch (error) {
-      console.error("Purchase failed:", error);
-      setStatus(`❌ Purchase Failed: ${error.message}`);
+      setStatus("Escrow funded successfully");
+    } catch (err) {
+      console.error("Purchase Failed:", err);
+      setStatus(`Purchase Failed: ${err.message}`);
     } finally {
       setIsTransactionLoading(false);
     }
   };
 
   const handleConfirm = async () => {
-    if (!accountId || !nftSerialNumber) return alert("No funded escrow to confirm.");
     setIsTransactionLoading(true);
-    setStatus("🚀 Confirming Delivery...");
     try {
-      const storedKey = localStorage.getItem('integro-private-key');
-      if (!storedKey) throw new Error('No private key found in localStorage.');
+      const storedKey = localStorage.getItem("integro-private-key");
+      const storedAccountId = localStorage.getItem("integro-account-id");
+      if (!storedKey || !storedAccountId) throw new Error("Vault missing");
+      if (!assetTokenIdState || nftSerialNumber == null) throw new Error("Missing NFT details");
 
-      // Setup client
-      const rawPrivateKey = storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivateKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-      console.log("[handleConfirm] Client created for buyer:", userAccountId.toString());
+      const client = getClientForAccount(storedAccountId, storedKey);
 
-      // Create and execute transaction
-      console.log("[handleConfirm] Building and sending the confirmDelivery transaction for serial #", nftSerialNumber);
-      const confirmTx = new ContractExecuteTransaction()
-        .setContractId(escrowContractAccountId)
-        .setGas(1000000)
-        .setFunction("confirmDelivery", new ContractFunctionParameters()
-          .addUint256(nftSerialNumber)
-        );
+      const tx = await new ContractExecuteTransaction()
+        .setContractId(ESCROW_CONTRACT_ACCOUNT_ID)
+        .setGas(400000)
+        .setFunction("confirmDelivery", new ContractFunctionParameters().addUint256(BigInt(nftSerialNumber)))
+        .execute(client);
 
-      const frozenConfirmTx = await confirmTx.freezeWith(userClient);
-      const signedConfirmTx = await frozenConfirmTx.sign(userPrivateKey);
-      console.log("[handleConfirm] Transaction signed by buyer.");
-      const confirmTxResponse = await signedConfirmTx.execute(userClient);
-      console.log("[handleConfirm] Transaction submitted. TX ID:", confirmTxResponse.transactionId.toString());
+      const receipt = await tx.getReceipt(client);
+      if (receipt.status.toString() !== "SUCCESS") throw new Error("confirmDelivery failed");
 
-      console.log("[handleConfirm] Awaiting transaction receipt...");
-      const confirmReceipt = await confirmTxResponse.getReceipt(userClient);
-      console.log("[handleConfirm] Receipt received. Status:", confirmReceipt.status.toString());
-
-
-      if (confirmReceipt.status.toString() !== 'SUCCESS') {
-        console.error("[handleConfirm] Full receipt:", JSON.stringify(confirmReceipt, null, 2));
-        throw new Error(`Native confirmDelivery call failed: ${confirmReceipt.status.toString()}`);
-      }
+      // update firestone: listing -> SOLD, transfer owner
+      await updateListingStateInFirestore(assetTokenIdState, nftSerialNumber, "SOLD");
+      await transferAssetOwnerInFirestore(assetTokenIdState, nftSerialNumber, /*buyer:*/ storedAccountId);
 
       setFlowState("SOLD");
-      setStatus(`🎉 SALE COMPLETE! NFT Transferred & Seller Paid.`);
-
-    } catch (error) {
-      console.error("Confirmation failed:", error);
-      setStatus(`❌ Confirmation Failed: ${error.message}`);
+      setStatus("Sale complete! NFT transferred and seller paid");
+    } catch (err) {
+      console.error("Confirmation Failed:", err);
+      setStatus(`Confirmation Failed: ${err.message}`);
     } finally {
       setIsTransactionLoading(false);
     }
@@ -441,7 +299,7 @@ function App() {
         <button onClick={handleMint} className="hedera-button" disabled={isTransactionLoading || flowState !== 'INITIAL'}>
           1. Mint RWA NFT
         </button>
-        <button onClick={handleList} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
+        <button onClick={() => handleList(50)} className="hedera-button" disabled={isTransactionLoading || flowState !== 'MINTED'}>
           2. List NFT for 50 HBAR
         </button>
         <button onClick={handleBuy} className="hedera-button" disabled={isTransactionLoading || flowState !== 'LISTED'}>
