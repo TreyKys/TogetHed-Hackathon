@@ -58,13 +58,14 @@ function Marketplace() {
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
-      const getPriceQuery = new ContractCallQuery()
+      const getListingQuery = new ContractCallQuery()
         .setContractId(escrowContractAccountId)
         .setGas(100000)
-        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(listing.serialNumber));
+        .setFunction("listings", new ContractFunctionParameters().addUint256(listing.serialNumber));
 
-      const priceQueryResult = await getPriceQuery.execute(userClient);
-      const priceInTinybarsLong = priceQueryResult.getUint256(0);
+      const listingQueryResult = await getListingQuery.execute(userClient);
+      // The price is the 3rd element (index 2) in the returned struct
+      const priceInTinybarsLong = listingQueryResult.getUint256(2);
       console.log("handleBuyClick: Raw price from contract (Long):", priceInTinybarsLong.toString());
 
       if (priceInTinybarsLong.isZero()) {
@@ -72,8 +73,8 @@ function Marketplace() {
         throw new Error("This asset is not currently listed for sale or has a price of zero.");
       }
 
-      const priceInTinybars = priceInTinybarsLong.toNumber();
-      console.log("handleBuyClick: Converted price (Number):", priceInTinybars);
+      const priceInTinybars = priceInTinybarsLong.toString();
+      console.log("handleBuyClick: Converted price (String):", priceInTinybars);
 
       // Set the selected listing with the definitive on-chain price
       setSelectedListing({ ...listing, priceInTinybars });
