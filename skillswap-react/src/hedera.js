@@ -1,8 +1,8 @@
 // --- 1. LIVE CONTRACT AND TOKEN IDS ---
-export const escrowContractAddress = "0x2CDeA2f7bB899954D53baa8eeC9BA5D11FED7672";
+export const escrowContractAddress = "0x8a4C373915273e1fFed386917670300c1aA3AB70";
 export const assetTokenContractAddress = "0x4670300c408d7c040715ba5f980791EfD0909B7a";
 export const assetTokenId = "0.0.7134449"; // The original, valid HTS token ID
-export const escrowContractAccountId = "0.0.7152729";
+export const escrowContractAccountId = "0.0.7170292";
 export const lendingPoolContractAddress = "0x862C9d8A540Fa5c7bAFf43d29C18eCa5100cc0e9";
 export const lendingPoolContractAccountId = "0.0.7161167";
 
@@ -74,6 +74,25 @@ export const escrowContractABI = [
         }
       ],
       "name": "ListingCanceled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountWeibars",
+          "type": "uint256"
+        }
+      ],
+      "name": "PaymentReady",
       "type": "event"
     },
     {
@@ -159,29 +178,10 @@ export const escrowContractABI = [
           "internalType": "uint256",
           "name": "tokenId",
           "type": "uint256"
-        }
-      ],
-      "name": "getListingPrice",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "tokenId",
-          "type": "uint256"
         },
         {
           "internalType": "uint256",
-          "name": "priceInWei",
+          "name": "priceInTinybars",
           "type": "uint256"
         }
       ],
@@ -227,12 +227,57 @@ export const escrowContractABI = [
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "who",
+          "type": "address"
+        }
+      ],
+      "name": "pendingBalance",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "pendingWithdrawals",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "uint256",
           "name": "tokenId",
           "type": "uint256"
         }
       ],
       "name": "refundBuyer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "withdrawPayments",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

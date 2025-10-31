@@ -430,10 +430,67 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
-  const confirmDelivery = async (listingId) => {
-    const listingRef = doc(db, 'listings', listingId);
-    await updateDoc(listingRef, { status: 'Delivered' });
+  const confirmDelivery = async (listingId, serialNumber) => {
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const confirmTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("confirmDelivery", new ContractFunctionParameters().addUint256(serialNumber));
+
+    const frozenTx = await confirmTx.freezeWith(client);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(client);
+    const receipt = await txResponse.getReceipt(client);
+
+    if (receipt.status.toString() === 'SUCCESS') {
+      const listingRef = doc(db, 'listings', listingId);
+      await updateDoc(listingRef, {
+        status: 'SOLD',
+        paymentPending: true
+      });
+      console.log(`confirmDelivery: Successfully confirmed delivery for listing ${listingId}, status updated to SOLD.`);
+    } else {
+      throw new Error(`On-chain confirmDelivery failed with status: ${receipt.status.toString()}`);
+    }
+    return receipt;
   };
+
+  const handleWithdraw = async () => {
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const withdrawTx = new ContractExecuteTransaction()
+        .setContractId(escrowContractAccountId)
+        .setGas(200000)
+        .setFunction("withdrawPayments");
+
+    const frozenTx = await withdrawTx.freezeWith(client);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(client);
+    const receipt = await txResponse.getReceipt(client);
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      throw new Error(`Withdraw transaction failed with status: ${receipt.status.toString()}`);
+    }
+     // After successful withdrawal, find all relevant listings and update their status.
+    const listingsRef = collection(db, "listings");
+    const q = query(listingsRef, where("sellerAccountId", "==", accountId), where("paymentPending", "==", true));
+    const querySnapshot = await getDocs(q);
+
+    const batch = writeBatch(db);
+    querySnapshot.forEach(doc => {
+        batch.update(doc.ref, { paymentPending: false });
+    });
+    await batch.commit();
+
+    return receipt;
+  }
 
   const value = {
     accountId,
@@ -458,6 +515,7 @@ export const WalletProvider = ({ children }) => {
     depositLiquidityAsAdmin,
     liquidateLoanAsAdmin,
     confirmDelivery,
+    handleWithdraw,
   };
   return (
     <WalletContext.Provider value={value}>

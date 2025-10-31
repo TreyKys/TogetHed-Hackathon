@@ -30,10 +30,12 @@ export interface EscrowInterface extends Interface {
       | "cancelListing"
       | "confirmDelivery"
       | "fundEscrow"
-      | "getListingPrice"
       | "listAsset"
       | "listings"
+      | "pendingBalance"
+      | "pendingWithdrawals"
       | "refundBuyer"
+      | "withdrawPayments"
   ): FunctionFragment;
 
   getEvent(
@@ -41,6 +43,7 @@ export interface EscrowInterface extends Interface {
       | "AssetListed"
       | "EscrowFunded"
       | "ListingCanceled"
+      | "PaymentReady"
       | "SaleCompleted"
   ): EventFragment;
 
@@ -61,10 +64,6 @@ export interface EscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "getListingPrice",
-    values: [BigNumberish]
-  ): string;
-  encodeFunctionData(
     functionFragment: "listAsset",
     values: [BigNumberish, BigNumberish]
   ): string;
@@ -73,8 +72,20 @@ export interface EscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "pendingBalance",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pendingWithdrawals",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "refundBuyer",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "withdrawPayments",
+    values?: undefined
   ): string;
 
   decodeFunctionResult(
@@ -90,14 +101,22 @@ export interface EscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "fundEscrow", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "getListingPrice",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(functionFragment: "listAsset", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "listings", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "pendingBalance",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingWithdrawals",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "refundBuyer",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "withdrawPayments",
     data: BytesLike
   ): Result;
 }
@@ -138,6 +157,19 @@ export namespace ListingCanceledEvent {
   export type OutputTuple = [tokenId: bigint];
   export interface OutputObject {
     tokenId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PaymentReadyEvent {
+  export type InputTuple = [seller: AddressLike, amountWeibars: BigNumberish];
+  export type OutputTuple = [seller: string, amountWeibars: bigint];
+  export interface OutputObject {
+    seller: string;
+    amountWeibars: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -222,14 +254,8 @@ export interface Escrow extends BaseContract {
 
   fundEscrow: TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
 
-  getListingPrice: TypedContractMethod<
-    [tokenId: BigNumberish],
-    [bigint],
-    "view"
-  >;
-
   listAsset: TypedContractMethod<
-    [tokenId: BigNumberish, priceInWei: BigNumberish],
+    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -247,11 +273,21 @@ export interface Escrow extends BaseContract {
     "view"
   >;
 
+  pendingBalance: TypedContractMethod<[who: AddressLike], [bigint], "view">;
+
+  pendingWithdrawals: TypedContractMethod<
+    [arg0: AddressLike],
+    [bigint],
+    "view"
+  >;
+
   refundBuyer: TypedContractMethod<
     [tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
+
+  withdrawPayments: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
@@ -270,12 +306,9 @@ export interface Escrow extends BaseContract {
     nameOrSignature: "fundEscrow"
   ): TypedContractMethod<[tokenId: BigNumberish], [void], "payable">;
   getFunction(
-    nameOrSignature: "getListingPrice"
-  ): TypedContractMethod<[tokenId: BigNumberish], [bigint], "view">;
-  getFunction(
     nameOrSignature: "listAsset"
   ): TypedContractMethod<
-    [tokenId: BigNumberish, priceInWei: BigNumberish],
+    [tokenId: BigNumberish, priceInTinybars: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -294,8 +327,17 @@ export interface Escrow extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "pendingBalance"
+  ): TypedContractMethod<[who: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "pendingWithdrawals"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "refundBuyer"
   ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "withdrawPayments"
+  ): TypedContractMethod<[], [void], "nonpayable">;
 
   getEvent(
     key: "AssetListed"
@@ -317,6 +359,13 @@ export interface Escrow extends BaseContract {
     ListingCanceledEvent.InputTuple,
     ListingCanceledEvent.OutputTuple,
     ListingCanceledEvent.OutputObject
+  >;
+  getEvent(
+    key: "PaymentReady"
+  ): TypedContractEvent<
+    PaymentReadyEvent.InputTuple,
+    PaymentReadyEvent.OutputTuple,
+    PaymentReadyEvent.OutputObject
   >;
   getEvent(
     key: "SaleCompleted"
@@ -358,6 +407,17 @@ export interface Escrow extends BaseContract {
       ListingCanceledEvent.InputTuple,
       ListingCanceledEvent.OutputTuple,
       ListingCanceledEvent.OutputObject
+    >;
+
+    "PaymentReady(address,uint256)": TypedContractEvent<
+      PaymentReadyEvent.InputTuple,
+      PaymentReadyEvent.OutputTuple,
+      PaymentReadyEvent.OutputObject
+    >;
+    PaymentReady: TypedContractEvent<
+      PaymentReadyEvent.InputTuple,
+      PaymentReadyEvent.OutputTuple,
+      PaymentReadyEvent.OutputObject
     >;
 
     "SaleCompleted(uint256,address,address)": TypedContractEvent<
