@@ -8,27 +8,16 @@ import Toast from '../components/Toast.jsx';
 import ConfirmationModal from '../components/ConfirmationModal.jsx';
 import './Marketplace.css';
 import '../App.css';
-import {
-  PrivateKey,
-  AccountId,
-  Client,
-  ContractExecuteTransaction,
-  ContractFunctionParameters,
-  ContractCallQuery,
-  Hbar
-} from '@hashgraph/sdk';
-import { escrowContractAccountId } from '../hedera.js';
-import { getOnchainListing } from '../hedera_helpers.js';
+import { Hbar } from '@hashgraph/sdk';
 
 function Marketplace() {
-  const { accountId, privateKey, setFlowState } = useWallet();
+  const { handleBuy, isTransactionLoading } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Goods & Produce');
   const [toast, setToast] = useState({ show: false, message: '', txHash: '' });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedListing, setSelectedListing] = useState(null);
-  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -42,61 +31,17 @@ function Marketplace() {
     return () => unsubscribe();
   }, []);
 
-  const handleBuy = async () => {
-    if (!selectedListing) return;
-    setIsModalOpen(false);
-    setIsTransactionLoading(true);
-
-    try {
-      const storedKey = privateKey;
-      const storedAccountId = accountId;
-      if (!storedKey || !storedAccountId) throw new Error("Vault not available.");
-
-      // 1) Check on-chain listing
-      const serial = Number(selectedListing.serial);
-      const onchain = await getOnchainListing(serial, escrowContractAccountId, storedAccountId, storedKey);
-      if (!onchain || Number(onchain.state) !== 0) {
-        throw new Error("Escrow: Asset is not listed for sale.");
-      }
-      const priceTinybars = BigInt(onchain.price); // canonical price
-
-      // 2) Create client with buyer operator and call fundEscrow
-      const client = Client.forTestnet().setOperator(AccountId.fromString(storedAccountId), PrivateKey.fromStringECDSA(storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey));
-      const tx = await new ContractExecuteTransaction()
-        .setContractId(escrowContractAccountId)
-        .setGas(200000)
-        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(BigInt(serial)))
-        .setPayableAmount(Hbar.fromTinybars(priceTinybars))
-        .execute(client);
-
-      const receipt = await tx.getReceipt(client);
-      if (receipt.status.toString() !== 'SUCCESS') {
-        throw new Error(`Purchase failed with status ${receipt.status.toString()}`);
-      }
-
-      // 4) Update Firestore listing doc -> state: FUNDED buyer: storedAccountId
-      await updateDoc(doc(db, "listings", selectedListing.id), {
-        state: "FUNDED",
-        buyerAccountId: storedAccountId,
-        fundedTxId: receipt.transactionId?.toString() || null,
-        fundedAt: new Date().toISOString()
-      });
-
-
-      setFlowState("FUNDED");
-      setToast({ show: true, message: 'Escrow Funded Successfully!', txHash: receipt.transactionId.toString() });
-    } catch (err) {
-      console.error("Purchase failed:", err);
-      setToast({ show: true, message: `❌ Purchase Failed: ${err.message}` });
-    } finally {
-      setIsTransactionLoading(false);
-    }
-  };
-
   const handleBuyClick = (listing) => {
     setSelectedListing(listing);
     setIsModalOpen(true);
   };
+
+  const executeBuy = () => {
+    if (selectedListing) {
+      handleBuy(selectedListing);
+      setIsModalOpen(false);
+    }
+  }
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -120,7 +65,7 @@ function Marketplace() {
         <ConfirmationModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          onConfirm={handleBuy}
+          onConfirm={executeBuy}
           priceInHbar={Hbar.fromTinybars(selectedListing.priceTinybars).toString()}
         />
       )}

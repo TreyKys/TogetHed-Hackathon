@@ -19,10 +19,23 @@ import {
   escrowContractAccountId,
   assetTokenId,
   lendingPoolContractAccountId,
+  escrowContractAddress,
+  escrowContractABI,
 } from '../hedera.js';
 import { getOnchainListing } from '../hedera_helpers.js';
+import { ethers } from "ethers";
 
 const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
+
+const getProvider = () => {
+  return new ethers.JsonRpcProvider(`https://testnet.hashio.io/api`);
+};
+
+const getEscrowContract = (signer) => {
+  const provider = getProvider();
+  const contract = new ethers.Contract(escrowContractAddress, escrowContractABI, provider);
+  return contract.connect(signer);
+}
 
 // Create the context
 export const WalletContext = createContext(null);
@@ -36,6 +49,7 @@ export const WalletProvider = ({ children }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
   const [status, setStatus] = useState("Welcome. Please create your secure vault.");
 
@@ -437,6 +451,109 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
+  const handleBuy = async (listing) => {
+    setStatus("🚀 Buying NFT (Funding Escrow)...");
+    try {
+      // --- 0. Basic guards ---
+      if (!privateKey) throw new Error("No signer available. Please restore your vault.");
+      if (!assetTokenId) throw new Error("No asset token id set.");
+      if (listing.serial == null) throw new Error("No NFT serial number available. Mint/list first.");
+
+      // --- 1. Normalize & log local variables for debugging ---
+      const storedKey = privateKey;
+      const storedAccountId = accountId;
+      if (!storedKey || !storedAccountId) throw new Error('Vault not found in localStorage.');
+
+      // serial: ensure it's a primitive we can pass
+      const serialNumberPrimitive = (typeof listing.serial === 'bigint') ? listing.serial : BigInt(Number(listing.serial));
+      console.log("DEBUG: handleBuy - serialNumberPrimitive (type):", typeof serialNumberPrimitive, serialNumberPrimitive.toString());
+
+      // --- 2. Re-query on-chain listing (canonical source of price & state) ---
+      const provider = getProvider();
+      const signer = new ethers.Wallet(privateKey, provider);
+      const escrowContractRead = getEscrowContract(signer); // signer is fine for read
+      // mapping: listings(uint256) returns (seller, buyer, price, state)
+      const listingRaw = await escrowContractRead.listings(serialNumberPrimitive);
+      // listingRaw may be an array or object depending on ethers version
+      // Normalize to primitives:
+      const sellerAddress = listingRaw[0] || listingRaw.seller;
+      const buyerAddress = listingRaw[1] || listingRaw.buyer;
+      const priceRaw = listingRaw[2] || listingRaw.price;   // on-chain price stored in tinybars (uint256)
+      const stateRaw = listingRaw[3] || listingRaw.state;
+
+      console.log("DEBUG: onchain listing raw", { sellerAddress, buyerAddress, priceRaw: priceRaw?.toString?.(), stateRaw: stateRaw?.toString?.() });
+
+      if (!priceRaw) throw new Error("Could not read on-chain price for this NFT.");
+      // Convert priceRaw to BigInt: priceRaw could be BigNumber or string — make it a BigInt
+      const priceTinybars = BigInt(priceRaw.toString());
+      console.log("DEBUG: priceTinybars (BigInt):", priceTinybars.toString());
+
+      // Listing state: require LISTED (enum first value usually 0)
+      const listingState = Number(stateRaw.toString ? stateRaw.toString() : stateRaw);
+      // adjust if your enum uses different mapping; in Escrow.sol: LISTED = 0
+      if (listingState !== 0) {
+        throw new Error("Escrow: Asset is not listed for sale.");
+      }
+
+      // --- 3. Compute payable amount in wei/weibar units (the unit msg.value expects)
+      // In Escrow.sol: convertToWeibar = tinybar * 10**10
+      // So we must send value = priceTinybars * 10^10 (as BigInt)
+      const TEN_POW_10 = BigInt("10000000000"); // 10^10
+      const priceWeibars = priceTinybars * TEN_POW_10;
+      console.log("DEBUG: priceWeibars (weibar BigInt) to send:", priceWeibars.toString());
+
+      // --- 5. Recreate/verify signer is correct and use it ---
+      // We already have `signer` in state, but double-check its address
+      const signerAddress = await signer.getAddress();
+      console.log("DEBUG: signer address:", signerAddress, "onchain listing seller:", sellerAddress);
+
+      // --- 6. Call fundEscrow with strict primitive types ---
+      const escrowContract = getEscrowContract(signer); // signer is ethers.Wallet
+      // Ensure arguments are BigInt or string/number (no objects)
+      // fundEscrow signature (Escrow.sol) expects: function fundEscrow(uint256 tokenId) payable
+      // So we pass the serial as BigInt or number; ethers accepts BigInt.
+      const tx = await escrowContract.fundEscrow(
+        // If your contract expects token solidity address + tokenId, change accordingly.
+        // Based on current Escrow.sol earlier in session: fundEscrow(uint256 tokenId) payable
+        serialNumberPrimitive,
+        {
+          value: priceWeibars, // BigInt
+          gasLimit: 1000000
+        }
+      );
+
+      console.log("DEBUG: fundEscrow tx hash:", tx.hash ? tx.hash : tx);
+      const receipt = await tx.wait();
+      console.log("DEBUG: fundEscrow receipt:", receipt);
+
+      if (receipt.status !== 1 && receipt.status !== 'success' && receipt.status !== 'SUCCESS') {
+        // safe check for different ethers versions
+        throw new Error(`Purchase transaction failed with receipt status: ${receipt.status}`);
+      }
+
+      // --- 7. Update local state + Firestore, etc. ---
+      // Example: set listing as FUNDED in Firestore
+      try {
+        await setDoc(doc(db, "listings", `${assetTokenId}_${serialNumberPrimitive.toString()}`), {
+          state: "FUNDED",
+          buyerAccountId: localStorage.getItem('integro-account-id'),
+          fundedAt: new Date().toISOString(),
+          fundedTxId: receipt.transactionHash || receipt.transactionId || null
+        }, { merge: true });
+      } catch (e) {
+        console.warn("Failed to write listing state to Firestore (non-fatal):", e);
+      }
+
+      setFlowState("FUNDED");
+      setStatus(`✅ Escrow Funded! Ready for delivery confirmation.`);
+    } catch (error) {
+      console.error("Purchase failed:", error);
+      // Show concise user error
+      const signerAddr = privateKey ? new ethers.Wallet(privateKey).address : "null";
+      setStatus(`❌ Purchase Failed: ${error.message} (Signer: ${signerAddr})`);
+    }
+  };
+
   const value = {
     accountId,
     evmAddress,
@@ -455,11 +572,14 @@ export const WalletProvider = ({ children }) => {
     handleMint,
     handleList,
     handleMintAndList,
+    handleBuy,
     approveNFTForPool,
     callTakeLoan,
     callRepayLoan,
     depositLiquidityAsAdmin,
-    liquidateLoanAsAdmin
+    liquidateLoanAsAdmin,
+    isTransactionLoading,
+    setIsTransactionLoading
   };
 
   return (
