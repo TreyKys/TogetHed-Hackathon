@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext.jsx';
-import { db } from '../firebase.js';
-import { collection, query, where, getDocs, or } from 'firebase/firestore';
+import { db, collection, query, where, getDocs, or } from '../firebase.js';
 import BackButton from '../components/BackButton.jsx';
 import { assetTokenId } from '../hedera.js';
 import './MyAssets.css';
