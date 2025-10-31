@@ -20,6 +20,7 @@ import {
   assetTokenId,
   lendingPoolContractAccountId,
 } from '../hedera.js';
+import { getOnchainListing } from '../hedera_helpers.js';
 
 const mintRwaViaUssdUrl = "https://mintrwaviaussd-cehqwvb4aq-uc.a.run.app";
 
@@ -36,6 +37,7 @@ export const WalletProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [flowState, setFlowState] = useState('INITIAL');
   const [nftSerialNumber, setNftSerialNumber] = useState(null);
+  const [status, setStatus] = useState("Welcome. Please create your secure vault.");
 
   const fetchBalance = useCallback(async (id) => {
     if (!id) return;
@@ -52,19 +54,32 @@ export const WalletProvider = ({ children }) => {
 
   // On component mount, try to load the wallet from localStorage
   useEffect(() => {
-    const storedKey = localStorage.getItem('integro-private-key');
-    const storedAccountId = localStorage.getItem('integro-account-id');
-    const storedEvmAddress = localStorage.getItem('integro-evm-address');
+    const loadVaultAndProfile = async () => {
+      const storedKey = localStorage.getItem('integro-private-key');
+      const storedAccountId = localStorage.getItem('integro-account-id');
+      const storedEvmAddress = localStorage.getItem('integro-evm-address');
 
-    if (storedKey && storedAccountId && storedEvmAddress) {
-      console.log("WalletContext: Restoring wallet from localStorage.");
-      setPrivateKey(storedKey);
-      setAccountId(storedAccountId);
-      setEvmAddress(storedEvmAddress);
-      fetchBalance(storedAccountId);
-    }
-    setIsLoaded(true);
+      if (storedKey && storedAccountId && storedEvmAddress) {
+        console.log("WalletContext: Restoring wallet from localStorage.");
+        setPrivateKey(storedKey);
+        setAccountId(storedAccountId);
+        setEvmAddress(storedEvmAddress);
+        await fetchBalance(storedAccountId);
+
+        // First, check local flag for speed
+        const localProfileFlag = localStorage.getItem('integro-profile-completed');
+        if (localProfileFlag === 'true') {
+          await fetchUserProfile(storedAccountId, true); // Fetch profile but assume completion
+        } else {
+          await fetchUserProfile(storedAccountId, false); // Fetch and check for completion
+        }
+      }
+      setIsLoaded(true);
+    };
+
+    loadVaultAndProfile();
   }, [fetchBalance]);
+
 
   useEffect(() => {
     if (accountId) {
@@ -76,28 +91,32 @@ export const WalletProvider = ({ children }) => {
     }
   }, [accountId, fetchBalance]);
 
-  const fetchUserProfile = useCallback(async () => {
-    if (accountId) {
-      console.log("WalletContext: Fetching user profile for", accountId);
-      const userDocRef = doc(db, 'users', accountId);
+  const fetchUserProfile = useCallback(async (id, skipCompletionCheck = false) => {
+    if (id) {
+      console.log("WalletContext: Fetching user profile for", id);
+      const userDocRef = doc(db, 'users', id);
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
-        console.log("WalletContext: User profile found.");
-        setUserProfile(userDocSnap.data());
+        const profileData = userDocSnap.data();
+        console.log("WalletContext: User profile found.", profileData);
+        setUserProfile(profileData);
+        if (profileData.profileCompleted) {
+          localStorage.setItem('integro-profile-completed', 'true');
+        }
       } else {
         console.log("WalletContext: User profile not found.");
         setUserProfile(null);
+        // If profile doesn't exist, the local flag should be false
+        localStorage.removeItem('integro-profile-completed');
       }
     }
-  }, [accountId]);
+  }, []);
 
-  // On component mount, try to load the wallet from localStorage
-  useEffect(() => {
-    fetchUserProfile();
-  }, [accountId, fetchUserProfile]);
 
   const refreshUserProfile = async () => {
-    await fetchUserProfile();
+    if (accountId) {
+      await fetchUserProfile(accountId);
+    }
   };
 
   // This function will be called by the onboarding flow to set the new vault details
@@ -107,12 +126,15 @@ export const WalletProvider = ({ children }) => {
     localStorage.setItem('integro-private-key', newPrivateKey);
     localStorage.setItem('integro-account-id', newAccountId);
     localStorage.setItem('integro-evm-address', newEvmAddress);
+    localStorage.removeItem('integro-profile-completed');
+
 
     // 2. Update state
     console.log("WalletContext: Setting new accountId:", newAccountId);
     setPrivateKey(newPrivateKey);
     setAccountId(newAccountId);
     setEvmAddress(newEvmAddress);
+    fetchUserProfile(newAccountId);
     console.log("WalletContext: State update complete.");
   };
 
@@ -121,9 +143,11 @@ export const WalletProvider = ({ children }) => {
     localStorage.removeItem('integro-private-key');
     localStorage.removeItem('integro-account-id');
     localStorage.removeItem('integro-evm-address');
+    localStorage.removeItem('integro-profile-completed');
     setPrivateKey(null);
     setAccountId(null);
     setEvmAddress(null);
+    setUserProfile(null);
   };
 
   const handleTokenAssociation = async () => {
@@ -204,26 +228,12 @@ export const WalletProvider = ({ children }) => {
     setFlowState('MINTED');
 
     // 2. List on-chain
-    await handleList(price, serialNumber);
-
-    // 3. Save to Firestore
-    await addDoc(collection(db, "listings"), {
-      tokenId: assetTokenId,
-      serialNumber: Number(serialNumber),
-      name,
-      description,
-      price: Hbar.from(price).toTinybars().toString(),
-      category,
-      sellerAccountId: accountId,
-      sellerEvmAddress: evmAddress,
-      imageUrl,
-      createdAt: Timestamp.now(),
-    });
+    await handleList(price, serialNumber, listingData);
 
     return { serialNumber };
   };
 
-  const handleList = async (price, serialToUse) => {
+  const handleList = async (price, serialToUse, listingData) => {
     const currentSerial = serialToUse || nftSerialNumber;
     // --- Defensive Programming: Check for null values ---
     if (!assetTokenId) {
@@ -252,19 +262,44 @@ export const WalletProvider = ({ children }) => {
     const txResponse = await signedTx.execute(userClient);
     await txResponse.getReceipt(userClient);
 
-    const priceInWei = Hbar.from(price).toTinybars();
+    const priceInTinybars = Hbar.from(price).toTinybars();
     const listAssetTx = new ContractExecuteTransaction()
       .setContractId(escrowContractAccountId)
       .setGas(1000000)
       .setFunction("listAsset", new ContractFunctionParameters()
         .addUint256(currentSerial)
-        .addUint256(priceInWei)
+        .addUint256(priceInTinybars)
       );
 
     const frozenListTx = await listAssetTx.freezeWith(userClient);
     const signedListTx = await frozenListTx.sign(userPrivateKey);
     const listTxResponse = await signedListTx.execute(userClient);
-    await listTxResponse.getReceipt(userClient);
+    const receipt = await listTxResponse.getReceipt(userClient);
+
+    // After contract listAsset tx receipt shows SUCCESS
+    const onchainListing = await getOnchainListing(currentSerial, escrowContractAccountId, accountId, privateKey);
+    // Validate that onchainListing.state === 0 (LISTED) and price matches
+    if (!onchainListing || onchainListing.state !== 0) {
+      throw new Error("Listing not confirmed on-chain after listAsset receipt");
+    }
+
+    // Write Firestore doc
+    const { name, description, category, imageUrl } = listingData;
+    const listingDoc = {
+      tokenId: assetTokenId,
+      serial: Number(currentSerial),
+      name,
+      description,
+      category,
+      imageUrl,
+      sellerAccountId: accountId,
+      priceTinybars: priceInTinybars.toString(),
+      txId: receipt.transactionId ? receipt.transactionId.toString() : null,
+      state: "LISTED",
+      confirmedAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'listings', `${assetTokenId}_${currentSerial}`), listingDoc);
+
 
     setFlowState("LISTED");
     return listTxResponse.transactionId.toString();
@@ -411,6 +446,8 @@ export const WalletProvider = ({ children }) => {
     userProfile,
     flowState,
     nftSerialNumber,
+    status,
+    setStatus,
     createVault,
     logout,
     refreshUserProfile,

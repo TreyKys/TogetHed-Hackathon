@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext.jsx';
-import { db, collection, onSnapshot } from '../firebase';
-import ProfileSetupModal from './ProfileSetupModal.jsx';
+import { db, collection, onSnapshot, query, where } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import Toast from '../components/Toast.jsx';
@@ -19,12 +18,12 @@ import {
   Hbar
 } from '@hashgraph/sdk';
 import { escrowContractAccountId } from '../hedera.js';
+import { getOnchainListing } from '../hedera_helpers.js';
 
 function Marketplace() {
-  const { accountId, privateKey, userProfile, isLoaded, setFlowState } = useWallet();
+  const { accountId, privateKey, setFlowState } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState('Goods & Produce');
   const [toast, setToast] = useState({ show: false, message: '', txHash: '' });
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,8 +32,8 @@ function Marketplace() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const listingsRef = collection(db, 'listings');
-    const unsubscribe = onSnapshot(listingsRef, (snapshot) => {
+    const q = query(collection(db, "listings"), where("state", "==", "LISTED"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const listingsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setListings(listingsData);
       setIsLoading(false);
@@ -43,82 +42,60 @@ function Marketplace() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    // Show the profile modal if the user is loaded and doesn't have a profile
-    if (isLoaded && userProfile === null) {
-      setShowProfileModal(true);
-    } else if (userProfile) {
-      setShowProfileModal(false);
-    }
-  }, [isLoaded, userProfile]);
-
-  const handleProfileComplete = () => {
-    setShowProfileModal(false);
-  };
-
-  const handleBuyClick = async (listing) => {
-    try {
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      const getPriceQuery = new ContractCallQuery()
-        .setContractId(escrowContractAccountId)
-        .setGas(100000)
-        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(listing.serialNumber));
-
-      const priceQueryResult = await getPriceQuery.execute(userClient);
-      const priceInTinybars = priceQueryResult.getUint256(0);
-
-      if (priceInTinybars.isZero()) {
-        throw new Error("Could not retrieve a valid price for this NFT.");
-      }
-
-      setSelectedListing({ ...listing, priceInTinybars });
-      setIsModalOpen(true);
-
-    } catch (error) {
-      console.error("Failed to get price:", error);
-      setToast({ show: true, message: `Error fetching price: ${error.message}` });
-    }
-  };
-
-  const executeBuy = async () => {
+  const handleBuy = async () => {
     if (!selectedListing) return;
     setIsModalOpen(false);
     setIsTransactionLoading(true);
 
     try {
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+      const storedKey = privateKey;
+      const storedAccountId = accountId;
+      if (!storedKey || !storedAccountId) throw new Error("Vault not available.");
 
-      const fundTx = new ContractExecuteTransaction()
+      // 1) Check on-chain listing
+      const serial = Number(selectedListing.serial);
+      const onchain = await getOnchainListing(serial, escrowContractAccountId, storedAccountId, storedKey);
+      if (!onchain || Number(onchain.state) !== 0) {
+        throw new Error("Escrow: Asset is not listed for sale.");
+      }
+      const priceTinybars = BigInt(onchain.price); // canonical price
+
+      // 2) Create client with buyer operator and call fundEscrow
+      const client = Client.forTestnet().setOperator(AccountId.fromString(storedAccountId), PrivateKey.fromStringECDSA(storedKey.startsWith("0x") ? storedKey.slice(2) : storedKey));
+      const tx = await new ContractExecuteTransaction()
         .setContractId(escrowContractAccountId)
-        .setGas(1000000)
-        .setPayableAmount(Hbar.fromTinybars(selectedListing.priceInTinybars))
-        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(selectedListing.serialNumber));
+        .setGas(200000)
+        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(BigInt(serial)))
+        .setPayableAmount(Hbar.fromTinybars(priceTinybars))
+        .execute(client);
 
-      const frozenFundTx = await fundTx.freezeWith(userClient);
-      const signedFundTx = await frozenFundTx.sign(userPrivateKey);
-      const fundTxResponse = await signedFundTx.execute(userClient);
-      await fundTxResponse.getReceipt(userClient);
+      const receipt = await tx.getReceipt(client);
+      if (receipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`Purchase failed with status ${receipt.status.toString()}`);
+      }
 
-      // Update Firestore document
-      const listingRef = doc(db, 'listings', selectedListing.id);
-      await updateDoc(listingRef, { status: 'Pending Delivery' });
+      // 4) Update Firestore listing doc -> state: FUNDED buyer: storedAccountId
+      await updateDoc(doc(db, "listings", selectedListing.id), {
+        state: "FUNDED",
+        buyerAccountId: storedAccountId,
+        fundedTxId: receipt.transactionId?.toString() || null,
+        fundedAt: new Date().toISOString()
+      });
+
 
       setFlowState("FUNDED");
-      setToast({ show: true, message: 'Escrow Funded Successfully!', txHash: fundTxResponse.transactionId.toString() });
-
-    } catch (error) {
-      console.error("Purchase failed:", error);
-      setToast({ show: true, message: `Purchase Failed: ${error.message}` });
+      setToast({ show: true, message: 'Escrow Funded Successfully!', txHash: receipt.transactionId.toString() });
+    } catch (err) {
+      console.error("Purchase failed:", err);
+      setToast({ show: true, message: `❌ Purchase Failed: ${err.message}` });
     } finally {
       setIsTransactionLoading(false);
     }
+  };
+
+  const handleBuyClick = (listing) => {
+    setSelectedListing(listing);
+    setIsModalOpen(true);
   };
 
   const containerVariants = {
@@ -138,14 +115,13 @@ function Marketplace() {
 
   return (
     <div className="marketplace-container">
-      {showProfileModal && <ProfileSetupModal onProfileComplete={handleProfileComplete} />}
       {toast.show && <Toast message={toast.message} txHash={toast.txHash} onClose={() => setToast({ show: false, message: '', txHash: '' })} />}
       {selectedListing && (
         <ConfirmationModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          onConfirm={executeBuy}
-          priceInHbar={Hbar.fromTinybars(selectedListing.priceInTinybars).toString()}
+          onConfirm={handleBuy}
+          priceInHbar={Hbar.fromTinybars(selectedListing.priceTinybars).toString()}
         />
       )}
       <main className="marketplace-content">
@@ -180,7 +156,7 @@ function Marketplace() {
                   <h3>{listing.name}</h3>
                   <p>{listing.description}</p>
                   <div className="listing-footer">
-                    <span className="listing-price">{Hbar.fromTinybars(listing.price).toString()} ℏ</span>
+                    <span className="listing-price">{Hbar.fromTinybars(listing.priceTinybars).toString()} ℏ</span>
                     <button onClick={() => handleBuyClick(listing)} className="buy-button" disabled={isTransactionLoading}>
                       Buy Now
                     </button>

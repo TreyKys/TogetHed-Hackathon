@@ -1,86 +1,82 @@
-.profile-setup-modal-overlay {
+.modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: rgba(0, 0, 0, 0.7);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 1000;
-}
+  }
 
-.profile-setup-modal-content {
-    font-family: 'Bricolage Grotesque', sans-serif;
+  .modal-content {
+    background: #1a1a1a;
+    padding: 2rem;
+    border-radius: 12px;
     width: 90%;
     max-width: 500px;
-    padding: 2rem;
-    background-color: #1e1e1e;
-    color: #f0f0f0;
-    border-radius: 15px;
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5);
+    border: 1px solid #2d2d2d;
+    color: white;
     text-align: center;
-}
+  }
 
-.profile-setup-modal-content h2 {
-    margin-bottom: 0.5rem;
-    color: #fff;
-}
+  .modal-content h2 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: #00ff87;
+  }
 
-.profile-setup-modal-content p {
+  .modal-content p {
+    font-size: 1.1rem;
     margin-bottom: 2rem;
-    color: #a0a0a0;
-}
-
-.profile-setup-modal-content form div {
-    margin-bottom: 1.5rem;
-    text-align: left;
-}
-
-.profile-setup-modal-content label {
-    display: block;
-    margin-bottom: 8px;
     color: #ccc;
-}
+  }
 
-.profile-setup-modal-content input,
-.profile-setup-modal-content select {
+  .profile-input,
+  .profile-textarea {
     width: 100%;
-    padding: 12px;
-    border-radius: 5px;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
     border: 1px solid #444;
     background-color: #2a2a2a;
-    color: #f0f0f0;
-    box-sizing: border-box; /* Important for padding to be included in width */
-}
+    color: white;
+    font-size: 1rem;
+  }
 
-.profile-setup-modal-content button[type="submit"] {
+  .profile-input:focus,
+  .profile-textarea:focus {
+    outline: none;
+    border-color: #00ff87;
+    box-shadow: 0 0 0 3px rgba(0, 255, 135, 0.2);
+  }
+
+  .profile-textarea {
+    height: 120px;
+    resize: vertical;
+  }
+
+  .save-button {
     width: 100%;
-    padding: 15px;
-    background-color: #2DD87F;
-    color: #121212;
+    padding: 1rem;
     border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
+    border-radius: 8px;
+    background-color: #00ff87;
+    color: #1a1a1a;
+    font-size: 1.1rem;
     font-weight: bold;
-    transition: background-color: 0.2s ease;
-}
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
 
-.profile-setup-modal-content button[type="submit"]:disabled {
+  .save-button:hover {
+    background-color: #7affb7;
+  }
+
+  .save-button:disabled {
     background-color: #555;
     cursor: not-allowed;
-}
-
-.profile-setup-modal-content button[type="submit"]:hover:not(:disabled) {
-    background-color: #28b86b;
-}
-
-.profile-setup-modal-content .status-message {
-    margin-top: 1rem;
-    color: #2DD87F;
-}
-
-.profile-setup-modal-content .status-message.error {
-    color: #ff4d4d;
-}
+  }

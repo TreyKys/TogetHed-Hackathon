@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { WalletProvider, useWallet } from './context/WalletContext.jsx';
 import Marketplace from './pages/Marketplace.jsx';
+import ProfileSetupModal from './pages/ProfileSetupModal.jsx';
 import './App.css';
 
 import LandingPage from './pages/LandingPage.jsx';
@@ -27,20 +28,40 @@ function App() {
 }
 
 function AppContent() {
-  const { accountId, userProfile, isLoaded } = useWallet();
+  const { accountId, userProfile, isLoaded, status } = useWallet();
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded && accountId && (!userProfile || !userProfile.profileCompleted)) {
+      const localFlag = localStorage.getItem('integro-profile-completed');
+      if (localFlag !== 'true') {
+        setProfileModalOpen(true);
+      }
+    } else {
+      setProfileModalOpen(false);
+    }
+  }, [isLoaded, accountId, userProfile]);
 
   if (!isLoaded) {
-    return <div className="loading-container">Restoring your vault...</div>;
+    return <div className="loading-container">{status}</div>;
   }
 
+  const handleProfileComplete = () => {
+    setProfileModalOpen(false);
+    localStorage.setItem('integro-profile-completed', 'true');
+  };
+
   return (
-    <Routes>
-      <Route path="/" element={!accountId ? <LandingPage /> : <Navigate to="/marketplace" />} />
-      <Route
-        path="/*"
-        element={accountId ? <ProtectedRoutes /> : <Navigate to="/" />}
-      />
-    </Routes>
+    <>
+      {profileModalOpen && <ProfileSetupModal onProfileComplete={handleProfileComplete} />}
+      <Routes>
+        <Route path="/" element={!accountId ? <LandingPage /> : <Navigate to="/marketplace" />} />
+        <Route
+          path="/*"
+          element={accountId ? <ProtectedRoutes /> : <Navigate to="/" />}
+        />
+      </Routes>
+    </>
   );
 }
 
