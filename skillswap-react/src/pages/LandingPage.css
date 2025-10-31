@@ -108,7 +108,7 @@ html, body { font-family: var(--font-regular); background-color: #ffffff; color:
 
 /* ------------------- / / 6. RESPONSIVENESS / / ------------------- */ @media (max-width: 768px) { .lp-section { padding: 40px 5%; }
 
-.lp-hero { height: 90vh; }
+.lp-hero { height: auto; padding: 100px 5%; }
 
 .lp-hero-content { max-width: 90%; }
 
@@ -121,5 +121,7 @@ html, body { font-family: var(--font-regular); background-color: #ffffff; color:
 .lp-features-grid { grid-template-columns: 1fr; /* Stack features on mobile */ }
 
 .lp-features-right { /* Re-order for mobile: Show image after features / order: -1; / This will be ignored, let's stack normally / / Stacking normally is fine. */ }
+
+.lp-final-cta { height: auto; padding: 80px 5%; }
 
 .lp-final-cta-content h2 { font-size: 1.8rem; } }

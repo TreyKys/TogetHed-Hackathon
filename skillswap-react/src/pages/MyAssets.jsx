@@ -6,17 +6,6 @@ import BackButton from '../components/BackButton.jsx';
 import { assetTokenId } from '../hedera.js';
 import './MyAssets.css';
 
-// Function to decode base64 metadata
-const decodeMetadata = (base64) => {
-    try {
-        const json = atob(base64);
-        return JSON.parse(json);
-    } catch (e) {
-        console.error("Failed to parse metadata:", e);
-        return {};
-    }
-};
-
 const MyAssets = () => {
     const { accountId } = useWallet();
     const [assets, setAssets] = useState([]);
@@ -27,7 +16,22 @@ const MyAssets = () => {
             if (!accountId) return;
             setIsLoading(true);
             try {
-                // 1. Fetch NFTs from Hedera Mirror Node
+                // 1. Fetch listing data from Firestore
+                const listingsRef = collection(db, "listings");
+                const q = query(listingsRef, where("sellerAccountId", "==", accountId));
+                const querySnapshot = await getDocs(q);
+                const firestoreAssets = {};
+                querySnapshot.forEach(doc => {
+                    const docData = doc.data();
+                    firestoreAssets[docData.serial] = {
+                        name: docData.name,
+                        description: docData.description,
+                        imageUrl: docData.imageUrl,
+                        status: docData.state || 'In Wallet'
+                    };
+                });
+
+                // 2. Fetch NFTs from Hedera Mirror Node
                 const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/accounts/${accountId}/nfts?token.id=${assetTokenId}`;
                 const response = await fetch(mirrorNodeUrl);
                 if (!response.ok) {
@@ -36,25 +40,16 @@ const MyAssets = () => {
                 const data = await response.json();
                 const userNfts = data.nfts || [];
 
-                // 2. Fetch listing statuses from Firestore
-                const listingsRef = collection(db, "listings");
-                const q = query(listingsRef, where("sellerAccountId", "==", accountId));
-                const querySnapshot = await getDocs(q);
-                const listingStatuses = {};
-                querySnapshot.forEach(doc => {
-                    const docData = doc.data();
-                    listingStatuses[docData.serialNumber] = docData.status || 'Listed';
-                });
 
                 // 3. Combine data and set state
                 const combinedAssets = userNfts.map(nft => {
-                    const metadata = decodeMetadata(nft.metadata);
+                    const firestoreData = firestoreAssets[nft.serial_number] || {};
                     return {
                         serialNumber: nft.serial_number,
-                        name: metadata.name || 'Untitled Asset',
-                        description: metadata.description || 'No description.',
-                        imageUrl: metadata.image || 'https://via.placeholder.com/150',
-                        status: listingStatuses[nft.serial_number] || 'In Wallet',
+                        name: firestoreData.name || 'Untitled Asset',
+                        description: firestoreData.description || 'No description.',
+                        imageUrl: firestoreData.imageUrl || 'https://via.placeholder.com/150',
+                        status: firestoreData.status || 'In Wallet',
                     };
                 });
 

@@ -124,3 +124,19 @@
     background-color: #2DD87F;
     color: #121212;
 }
+
+@media (max-width: 768px) {
+    .marketplace-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .sell-button {
+        margin-top: 1rem;
+        width: 100%;
+    }
+
+    .tabs {
+        font-size: 0.9rem;
+    }
+}

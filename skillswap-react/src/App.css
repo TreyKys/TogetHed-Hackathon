@@ -14,3 +14,9 @@ body {
 }
 
 /* Add any other global styles you need here */
+
+@media (max-width: 768px) {
+    #root {
+        padding: 1rem;
+    }
+}

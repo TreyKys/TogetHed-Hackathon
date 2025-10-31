@@ -14,7 +14,7 @@ import {
   Hbar,
   AccountBalanceQuery
 } from '@hashgraph/sdk';
-import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc } from '../firebase';
+import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc } from '../firebase';
 import {
   escrowContractAccountId,
   assetTokenId,
