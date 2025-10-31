@@ -1,0 +1,86 @@
+.profile-setup-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.profile-setup-modal-content {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    width: 90%;
+    max-width: 500px;
+    padding: 2rem;
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    border-radius: 15px;
+    text-align: center;
+}
+
+.profile-setup-modal-content h2 {
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.profile-setup-modal-content p {
+    margin-bottom: 2rem;
+    color: #a0a0a0;
+}
+
+.profile-setup-modal-content form div {
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+.profile-setup-modal-content label {
+    display: block;
+    margin-bottom: 8px;
+    color: #ccc;
+}
+
+.profile-setup-modal-content input,
+.profile-setup-modal-content select {
+    width: 100%;
+    padding: 12px;
+    border-radius: 5px;
+    border: 1px solid #444;
+    background-color: #2a2a2a;
+    color: #f0f0f0;
+    box-sizing: border-box; /* Important for padding to be included in width */
+}
+
+.profile-setup-modal-content button[type="submit"] {
+    width: 100%;
+    padding: 15px;
+    background-color: #2DD87F;
+    color: #121212;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: background-color: 0.2s ease;
+}
+
+.profile-setup-modal-content button[type="submit"]:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+}
+
+.profile-setup-modal-content button[type="submit"]:hover:not(:disabled) {
+    background-color: #28b86b;
+}
+
+.profile-setup-modal-content .status-message {
+    margin-top: 1rem;
+    color: #2DD87F;
+}
+
+.profile-setup-modal-content .status-message.error {
+    color: #ff4d4d;
+}

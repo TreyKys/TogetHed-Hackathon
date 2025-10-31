@@ -85,28 +85,6 @@
     color: white;
 }
 
-.status-delivered {
-    background-color: #17a2b8;
-    color: white;
-}
-
-.confirm-delivery-btn {
-    width: 100%;
-    padding: 0.8rem;
-    margin-top: 1rem;
-    background-color: #2DD87F;
-    color: #121212;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.2s ease;
-}
-
-.confirm-delivery-btn:hover {
-    background-color: #28b86b;
-}
-
 .no-assets-container {
     text-align: center;
     padding: 4rem 2rem;

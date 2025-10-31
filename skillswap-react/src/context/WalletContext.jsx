@@ -14,7 +14,7 @@ import {
   Hbar,
   AccountBalanceQuery
 } from '@hashgraph/sdk';
-import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc } from '../firebase';
+import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc } from '../firebase';
 import {
   escrowContractAccountId,
   assetTokenId,
@@ -402,6 +402,39 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
+  const confirmDelivery = async (listingId) => {
+    const listingRef = doc(db, 'listings', listingId);
+    await updateDoc(listingRef, { status: 'Delivered' });
+  };
+
+  const updateUserProfile = async (profileData) => {
+    if (!accountId) {
+      console.error("updateUserProfile Error: accountId is not set.");
+      throw new Error("You must be logged in to update your profile.");
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', accountId);
+      await updateDoc(userDocRef, {
+        ...profileData,
+        profileCompleted: true,
+      });
+      await fetchUserProfile(); // Refresh the user profile in the context
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      // If the document doesn't exist, create it.
+      if (error.code === 'not-found') {
+        await setDoc(userDocRef, {
+          ...profileData,
+          profileCompleted: true,
+        });
+        await fetchUserProfile(); // Refresh the user profile in the context
+      } else {
+        throw error;
+      }
+    }
+  };
+
   const value = {
     accountId,
     evmAddress,
@@ -409,6 +442,7 @@ export const WalletProvider = ({ children }) => {
     hbarBalance,
     isLoaded,
     userProfile,
+    isProfileLoading,
     flowState,
     nftSerialNumber,
     createVault,
@@ -422,9 +456,10 @@ export const WalletProvider = ({ children }) => {
     callTakeLoan,
     callRepayLoan,
     depositLiquidityAsAdmin,
-    liquidateLoanAsAdmin
+    liquidateLoanAsAdmin,
+    confirmDelivery,
+    updateUserProfile,
   };
-
   return (
     <WalletContext.Provider value={value}>
       {children}

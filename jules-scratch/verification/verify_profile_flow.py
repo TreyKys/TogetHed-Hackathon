@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+import time
 
 def run(playwright):
     browser = playwright.chromium.launch(headless=True)
@@ -12,11 +13,32 @@ def run(playwright):
     # Navigate to the marketplace
     page.goto("http://localhost:5173/marketplace")
 
-    # Wait for the h1 to be visible
-    page.wait_for_selector("h1")
+    # Check for the "complete your profile" toast
+    page.wait_for_selector("text=Please complete your profile to create listings.")
 
-    # Take a screenshot
-    page.screenshot(path="jules-scratch/verification/profile-state.png")
+    # Open the sidebar
+    page.get_by_role("button", name="Menu").click()
+
+    # Click the "User Profile" link
+    page.get_by_role("link", name="User Profile").click()
+
+    # Wait for navigation and fill out the form
+    page.wait_for_url("http://localhost:5173/profile")
+    page.get_by_label("Name").fill("Test User")
+    page.get_by_label("Location").fill("Test Location")
+    page.get_by_label("Bio").fill("This is a test bio.")
+    page.get_by_role("button", name="Save Profile").click()
+
+    # Check for the success toast
+    page.wait_for_selector("text=Profile updated successfully!")
+
+    # Navigate back to the marketplace
+    page.goto("http://localhost:5173/marketplace")
+
+    # Take a screenshot to show the notification is gone
+    page.screenshot(path="jules-scratch/verification/profile-complete.png")
+
+    time.sleep(10)
 
     browser.close()
 
