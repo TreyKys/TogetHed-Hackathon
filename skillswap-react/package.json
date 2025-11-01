@@ -19,6 +19,9 @@
     "react-router-dom": "^7.9.4",
     "vite-plugin-node-polyfills": "^0.24.0"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@playwright/test": "^1.56.1",
