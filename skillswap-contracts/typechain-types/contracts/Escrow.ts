@@ -33,7 +33,9 @@ export interface EscrowInterface extends Interface {
       | "getListingPrice"
       | "listAsset"
       | "listings"
+      | "payments"
       | "refundBuyer"
+      | "withdrawPayments"
   ): FunctionFragment;
 
   getEvent(
@@ -73,8 +75,16 @@ export interface EscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "payments",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "refundBuyer",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "withdrawPayments",
+    values?: undefined
   ): string;
 
   decodeFunctionResult(
@@ -96,8 +106,13 @@ export interface EscrowInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "listAsset", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "listings", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "payments", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "refundBuyer",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "withdrawPayments",
     data: BytesLike
   ): Result;
 }
@@ -247,11 +262,15 @@ export interface Escrow extends BaseContract {
     "view"
   >;
 
+  payments: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
   refundBuyer: TypedContractMethod<
     [tokenId: BigNumberish],
     [void],
     "nonpayable"
   >;
+
+  withdrawPayments: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
@@ -294,8 +313,14 @@ export interface Escrow extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "payments"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "refundBuyer"
   ): TypedContractMethod<[tokenId: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "withdrawPayments"
+  ): TypedContractMethod<[], [void], "nonpayable">;
 
   getEvent(
     key: "AssetListed"

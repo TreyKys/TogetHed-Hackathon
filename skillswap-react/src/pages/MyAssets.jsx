@@ -17,7 +17,7 @@ const decodeMetadata = (base64) => {
 };
 
 const MyAssets = () => {
-    const { accountId, confirmDelivery } = useWallet();
+    const { accountId, confirmDelivery, withdrawPayments } = useWallet();
     const [assets, setAssets] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -87,9 +87,9 @@ const MyAssets = () => {
         fetchAssets();
     }, [accountId]);
 
-    const handleConfirmDelivery = async (listingId) => {
+    const handleConfirmDelivery = async (listing) => {
         try {
-            await confirmDelivery(listingId);
+            await confirmDelivery(listing);
             // Refresh the assets list to show the new status
             fetchAssets();
         } catch (error) {
@@ -97,10 +97,21 @@ const MyAssets = () => {
         }
     };
 
+    const handleWithdrawPayments = async () => {
+        try {
+            await withdrawPayments();
+            // Refresh the assets list to show the new status
+            fetchAssets();
+        } catch (error) {
+            console.error("Failed to withdraw payments:", error);
+        }
+    };
+
     return (
         <div className="my-assets-container">
             <BackButton />
             <h2>My Digital Assets</h2>
+            <button onClick={handleWithdrawPayments} className="withdraw-btn">Withdraw Funds</button>
             {isLoading ? (
                 <p>Loading your assets from the Hedera network...</p>
             ) : assets.length > 0 ? (
@@ -116,9 +127,9 @@ const MyAssets = () => {
                                         {asset.status}
                                     </span>
                                 </div>
-                                {asset.status === 'Pending Delivery' && (
+                                {asset.status === 'Funded' && (
                                     <button
-                                      onClick={() => handleConfirmDelivery(asset.id)}
+                                      onClick={() => handleConfirmDelivery(asset)}
                                       className="confirm-delivery-btn"
                                     >
                                         Confirm Delivery

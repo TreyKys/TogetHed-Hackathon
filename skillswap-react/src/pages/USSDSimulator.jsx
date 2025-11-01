@@ -6,18 +6,15 @@ import './USSDSimulator.css';
 
 const MENU_STATE = {
   IDLE: 'IDLE',
+  ONBOARDING: 'ONBOARDING',
   MAIN: 'MAIN',
   CHECK_BALANCE: 'CHECK_BALANCE',
   CREATE_LISTING_TITLE: 'CREATE_LISTING_TITLE',
+  CREATE_LISTING_QUALITY: 'CREATE_LISTING_QUALITY',
   CREATE_LISTING_PRICE: 'CREATE_LISTING_PRICE',
   CREATE_LISTING_DESC: 'CREATE_LISTING_DESC',
   CREATE_LISTING_CONFIRM: 'CREATE_LISTING_CONFIRM',
-  CREATE_GIG_TITLE: 'CREATE_GIG_TITLE',
-  CREATE_GIG_PRICE: 'CREATE_GIG_PRICE',
-  CREATE_GIG_DESC: 'CREATE_GIG_DESC',
-  CREATE_GIG_CONFIRM: 'CREATE_GIG_CONFIRM',
   VIEW_MARKETPLACE: 'VIEW_MARKETPLACE',
-  VIEW_ITEM: 'VIEW_ITEM',
   BUY_ITEM_CONFIRM: 'BUY_ITEM_CONFIRM',
   SEND_MONEY_ACCOUNT_ID: 'SEND_MONEY_ACCOUNT_ID',
   SEND_MONEY_AMOUNT: 'SEND_MONEY_AMOUNT',
@@ -25,26 +22,19 @@ const MENU_STATE = {
 };
 
 const USSDSimulator = () => {
-  const { balance, handleMintAndList, handleBuy, accountId } = useContext(WalletContext);
+  const { balance, handleMintAndList, handleBuy, accountId, createVault } = useContext(WalletContext);
 
   const [menuState, setMenuState] = useState(MENU_STATE.IDLE);
   const [display, setDisplay] = useState('Dial *467# to start');
   const [input, setInput] = useState('');
   const [smsMessages, setSmsMessages] = useState([]);
   const [sessionData, setSessionData] = useState({});
-  const [listings, setListings] = useState([]);
-  const [currentPage, setCurrentPage] = useState(0);
-
-  useEffect(() => {
-    console.log("USSDSimulator component mounted");
-  }, []);
 
   const MAIN_MENU_TEXT = `Welcome to Integro!
 1. Create Listing
 2. View Marketplace
-3. Create Delivery Gig
-4. My HBAR Balance
-5. Send Money (mock)`;
+3. My HBAR Balance
+4. Send Money (mock)`;
 
   const addSms = (text, sender = 'Integro') => {
     setSmsMessages(prev => [{ sender, text, id: Date.now() }, ...prev]);
@@ -54,8 +44,13 @@ const USSDSimulator = () => {
 
   const handleDial = async () => {
     if (menuState === MENU_STATE.IDLE && input === '*467#') {
-      setMenuState(MENU_STATE.MAIN);
-      setDisplay(MAIN_MENU_TEXT);
+      if (!accountId) {
+        setMenuState(MENU_STATE.ONBOARDING);
+        setDisplay('Welcome to Integro!\n\nTo use our service, you need a secure digital vault. Create one now?\n\n1. Yes, create my vault\n2. No, not now');
+      } else {
+        setMenuState(MENU_STATE.MAIN);
+        setDisplay(MAIN_MENU_TEXT);
+      }
     } else {
       await handleMenuState();
     }
@@ -63,24 +58,62 @@ const USSDSimulator = () => {
   };
 
   const handleMenuState = async () => {
-     if (input === '0' && menuState !== MENU_STATE.MAIN) {
+     if (input === '0' && menuState !== MENU_STATE.MAIN && menuState !== MENU_STATE.IDLE) {
       setMenuState(MENU_STATE.MAIN);
       setDisplay(MAIN_MENU_TEXT);
       setSessionData({});
-      setListings([]);
       return;
     }
 
     switch (menuState) {
+      case MENU_STATE.ONBOARDING:
+        if (input === '1') {
+          setDisplay('Creating your secure vault...');
+          try {
+            const response = await fetch("https://createaccount-cehqwvb4aq-uc.a.run.app", { method: 'POST' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to create vault.');
+
+            createVault(data.accountId, data.privateKey, data.evmAddress);
+
+            setDisplay(`Vault created successfully!\n\nDial *467# again to access the main menu.`);
+            addSms(`Your Integro Vault Details:\nAccount ID: ${data.accountId}\nPrivate Key: ${data.privateKey}\n\nKEEP THIS SECRET. DO NOT SHARE.`);
+            setMenuState(MENU_STATE.IDLE);
+          } catch (error) {
+            console.error("Onboarding failed:", error);
+            setDisplay(`Vault creation failed. Please try again later.\n\nDial *467# to retry.`);
+            setMenuState(MENU_STATE.IDLE);
+          }
+        } else {
+          setDisplay('Action cancelled. Dial *467# to start again.');
+          setMenuState(MENU_STATE.IDLE);
+        }
+        break;
+
       case MENU_STATE.MAIN:
         handleMainMenu(input);
         break;
 
       case MENU_STATE.CREATE_LISTING_TITLE:
         setSessionData({ ...sessionData, name: input });
+        setMenuState(MENU_STATE.CREATE_LISTING_QUALITY);
+        setDisplay('Select Quality:\nA. Grade A (Best)\nB. Grade B (Good)\nC. Grade C (Fair)');
+        break;
+
+      case MENU_STATE.CREATE_LISTING_QUALITY:
+        let quality;
+        if (input.toUpperCase() === 'A') quality = 'A';
+        else if (input.toUpperCase() === 'B') quality = 'B';
+        else if (input.toUpperCase() === 'C') quality = 'C';
+        else {
+          setDisplay('Invalid selection. Please choose A, B, or C.\n\nSelect Quality:\nA. Grade A (Best)\nB. Grade B (Good)\nC. Grade C (Fair)');
+          break;
+        }
+        setSessionData({ ...sessionData, quality: quality });
         setMenuState(MENU_STATE.CREATE_LISTING_PRICE);
         setDisplay('Enter item price (in HBAR):');
         break;
+
       case MENU_STATE.CREATE_LISTING_PRICE:
         setSessionData({ ...sessionData, price: input });
         setMenuState(MENU_STATE.CREATE_LISTING_DESC);
@@ -90,15 +123,20 @@ const USSDSimulator = () => {
         const listingData = { ...sessionData, description: input };
         setSessionData(listingData);
         setMenuState(MENU_STATE.CREATE_LISTING_CONFIRM);
-        setDisplay(`Confirm Listing:\nTitle: ${listingData.name}\nPrice: ${listingData.price} HBAR\nDesc: ${listingData.description}\n\n1. Confirm\n0. Cancel`);
+        setDisplay(`Confirm Listing:\nTitle: ${listingData.name}\nQuality: Grade ${listingData.quality}\nPrice: ${listingData.price} HBAR\nDesc: ${listingData.description}\n\n1. Confirm\n0. Cancel`);
         break;
       case MENU_STATE.CREATE_LISTING_CONFIRM:
         if (input === '1') {
           setDisplay('Processing your listing...');
           try {
-            await handleMintAndList(sessionData);
-            addSms(`Congratulations! Your listing "${sessionData.name}" is now live on the marketplace.`);
-            setDisplay(`Listing created successfully!\n\nYou will receive an SMS confirmation shortly.\n\n0. Main Menu`);
+            const finalListingData = {
+              ...sessionData,
+              category: 'Goods',
+              imageUrl: 'https://via.placeholder.com/150',
+            };
+            await handleMintAndList(finalListingData);
+            addSms(`Your listing "${sessionData.name}" has been minted and listed successfully (pending agent verification).`);
+            setDisplay(`Listed and minted successfully! (pending agent verification)\n\nYou will receive an SMS confirmation shortly.\n\n0. Main Menu`);
           } catch (error) {
             console.error("Failed to create listing:", error);
             setDisplay(`Listing failed. Please try again.\n\n0. Main Menu`);
@@ -111,10 +149,6 @@ const USSDSimulator = () => {
         setSessionData({});
         break;
 
-      case MENU_STATE.VIEW_MARKETPLACE:
-        handleMarketplaceNavigation(input);
-        break;
-
       case MENU_STATE.BUY_ITEM_CONFIRM:
         if (input === '1') {
           setDisplay('Processing purchase...');
@@ -122,16 +156,14 @@ const USSDSimulator = () => {
             await handleBuy(sessionData.selectedItem);
             addSms(`Purchase complete! You bought "${sessionData.selectedItem.name}".\nSeller will be notified.`);
             setDisplay(`Purchase successful!\n\nAn SMS receipt has been sent to you.\n\n0. Main Menu`);
-            setMenuState(MENU_STATE.MAIN);
           } catch (error) {
             console.error("Purchase failed:", error);
             setDisplay(`Purchase failed. Please try again.\n\n0. Main Menu`);
-            setMenuState(MENU_STATE.MAIN);
           }
         } else {
-          setMenuState(MENU_STATE.VIEW_MARKETPLACE);
-          setDisplay(formatListings(listings, currentPage));
+          setDisplay('Purchase cancelled.');
         }
+        setMenuState(MENU_STATE.MAIN);
         break;
 
       case MENU_STATE.CHECK_BALANCE:
@@ -169,6 +201,8 @@ const USSDSimulator = () => {
         break;
 
       default:
+        setMenuState(MENU_STATE.MAIN);
+        setDisplay(MAIN_MENU_TEXT);
         break;
     }
   };
@@ -180,88 +214,44 @@ const USSDSimulator = () => {
         setDisplay('Enter item title:');
         break;
       case '2':
-        await fetchAndDisplayListings();
+        setDisplay('Fetching marketplace listings...');
+        try {
+          const q = query(
+            collection(db, "listings"),
+            where("status", "==", "Listed"),
+            limit(20)
+          );
+          const querySnapshot = await getDocs(q);
+          const fetchedListings = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          if (fetchedListings.length === 0) {
+            addSms('The marketplace is currently empty.');
+          } else {
+            let smsText = 'INTEGRO MARKETPLACE:\n';
+            fetchedListings.forEach(item => {
+              smsText += `- ${item.name} | ${Hbar.fromTinybars(item.price).toString()}\n`;
+            });
+            addSms(smsText);
+          }
+          setDisplay('Latest marketplace listings have been sent to you via SMS.\n\n0. Main Menu');
+          setMenuState(MENU_STATE.MAIN);
+        } catch (error) {
+          console.error("Failed to fetch listings for SMS:", error);
+          setDisplay("Could not fetch marketplace.\nPlease try again.\n\n0. Main Menu");
+          setMenuState(MENU_STATE.MAIN);
+        }
         break;
       case '3':
-        setDisplay('Delivery Gig feature coming soon!');
-        break;
-      case '4':
         const currentBalance = balance ? balance.toString() : 'Loading...';
         setDisplay(`Your HBAR balance is: ${currentBalance}\n\n0. Back`);
         setMenuState(MENU_STATE.CHECK_BALANCE);
         break;
-      case '5':
+      case '4':
         setMenuState(MENU_STATE.SEND_MONEY_ACCOUNT_ID);
         setDisplay('Enter recipient Account ID:');
         break;
       default:
         setDisplay(`Invalid option.\n${MAIN_MENU_TEXT}`);
-    }
-  };
-
-  const fetchAndDisplayListings = async () => {
-    setDisplay('Fetching marketplace listings...');
-    try {
-      const q = query(
-        collection(db, "listings"),
-        where("status", "==", "Listed"),
-        where("sellerAccountId", "!=", accountId),
-        limit(10)
-      );
-      const querySnapshot = await getDocs(q);
-      const fetchedListings = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      if (fetchedListings.length === 0) {
-        setDisplay('The marketplace is currently empty.\n\n0. Main Menu');
-        setMenuState(MENU_STATE.MAIN);
-        return;
-      }
-
-      setListings(fetchedListings);
-      setCurrentPage(0);
-      setMenuState(MENU_STATE.VIEW_MARKETPLACE);
-      setDisplay(formatListings(fetchedListings, 0));
-    } catch (error) {
-      console.error("Failed to fetch listings:", error);
-      setDisplay("Could not fetch marketplace.\nPlease try again.\n\n0. Main Menu");
-      setMenuState(MENU_STATE.MAIN);
-    }
-  };
-
-  const formatListings = (items, page) => {
-    const itemsPerPage = 3;
-    const start = page * itemsPerPage;
-    const pageItems = items.slice(start, start + itemsPerPage);
-
-    let text = `Marketplace (Page ${page + 1}):\n`;
-    pageItems.forEach((item, index) => {
-      text += `${start + index + 1}. ${item.name} - ${Hbar.fromTinybars(item.price).toString()}\n`;
-    });
-
-    if (items.length > start + itemsPerPage) text += `99. Next Page\n`;
-    text += `\nSelect an item or option.\n0. Main Menu`;
-    return text;
-  };
-
-  const handleMarketplaceNavigation = (navInput) => {
-    if (navInput === '99') {
-      const nextPage = currentPage + 1;
-      if (nextPage * 3 < listings.length) {
-        setCurrentPage(nextPage);
-        setDisplay(formatListings(listings, nextPage));
-      } else {
-        setDisplay(`End of listings.\n${formatListings(listings, currentPage)}`);
-      }
-    } else {
-      const itemIndex = parseInt(navInput, 10) - 1;
-      if (itemIndex >= 0 && itemIndex < listings.length) {
-        setSessionData({ selectedItem: listings[itemIndex] });
-        setMenuState(MENU_STATE.BUY_ITEM_CONFIRM);
-        const priceHbar = Hbar.fromTinybars(listings[itemIndex].price).toString();
-        setDisplay(`Item: ${listings[itemIndex].name}\nPrice: ${priceHbar}\nDesc: ${listings[itemIndex].description}\n\n1. Buy\n0. Back`);
-      } else {
-        setDisplay(`Invalid selection.\n${formatListings(listings, currentPage)}`);
-      }
     }
   };
 

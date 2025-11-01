@@ -430,9 +430,68 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
-  const confirmDelivery = async (listingId) => {
-    const listingRef = doc(db, 'listings', listingId);
-    await updateDoc(listingRef, { status: 'Delivered' });
+  const confirmDelivery = async (listing) => {
+    console.log("confirmDelivery: confirming delivery for listing:", listing);
+    if (!listing || !listing.serialNumber) {
+      throw new Error("Invalid listing data provided to confirmDelivery.");
+    }
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const confirmDeliveryTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("confirmDelivery", new ContractFunctionParameters()
+        .addUint256(listing.serialNumber)
+      );
+
+    const frozenTx = await confirmDeliveryTx.freezeWith(client);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(client);
+
+    const receipt = await txResponse.getReceipt(client);
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      throw new Error(`Confirm delivery failed with status: ${receipt.status.toString()}`);
+    }
+
+    const listingRef = doc(db, 'listings', listing.id);
+    await updateDoc(listingRef, {
+      status: 'Delivered',
+    });
+
+    console.log("confirmDelivery: Delivery confirmed and Firestore updated.");
+    return receipt;
+  };
+
+  const withdrawPayments = async () => {
+    console.log("withdrawPayments: withdrawing payments for account:", accountId);
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const withdrawTx = new ContractExecuteTransaction()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("withdrawPayments", new ContractFunctionParameters());
+
+    const frozenTx = await withdrawTx.freezeWith(client);
+    const signedTx = await frozenTx.sign(userPrivateKey);
+    const txResponse = await signedTx.execute(client);
+
+    const receipt = await txResponse.getReceipt(client);
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      throw new Error(`Withdraw payments failed with status: ${receipt.status.toString()}`);
+    }
+
+    console.log("withdrawPayments: Payments withdrawn successfully.");
+    return receipt;
   };
 
   const handleBuy = async (listing) => {
@@ -500,6 +559,7 @@ export const WalletProvider = ({ children }) => {
     liquidateLoanAsAdmin,
     confirmDelivery,
     handleBuy,
+    withdrawPayments,
   };
   return (
     <WalletContext.Provider value={value}>

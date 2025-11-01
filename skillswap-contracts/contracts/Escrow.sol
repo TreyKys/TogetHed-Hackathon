@@ -22,6 +22,7 @@ contract Escrow {
     }
 
     mapping(uint256 => Listing) public listings;
+    mapping(address => uint256) public payments;
 
     event AssetListed(uint256 indexed tokenId, address indexed seller, uint256 price);
     event EscrowFunded(uint256 indexed tokenId, address indexed buyer);
@@ -78,9 +79,8 @@ contract Escrow {
 
         listing.state = ListingState.SOLD;
 
-        // Send HBAR (native value) to the seller
-        (bool sent, ) = payable(listing.seller).call{value: listing.price}("");
-        require(sent, "Escrow: Failed to send HBAR to seller.");
+        // Credit the seller's account
+        payments[listing.seller] += listing.price;
 
         // Transfer NFT to buyer
         assetToken.safeTransferFrom(listing.seller, listing.buyer, tokenId);
@@ -124,5 +124,18 @@ contract Escrow {
     // ------------------------------------------------------------
     function getListingPrice(uint256 tokenId) external view returns (uint256) {
         return listings[tokenId].price;
+    }
+
+    // ------------------------------------------------------------
+    // 7. Seller withdraws their payment
+    // ------------------------------------------------------------
+    function withdrawPayments() external {
+        uint256 payment = payments[msg.sender];
+        require(payment > 0, "Escrow: No payment to withdraw.");
+
+        payments[msg.sender] = 0;
+
+        (bool sent, ) = payable(msg.sender).call{value: payment}("");
+        require(sent, "Escrow: Failed to withdraw payment.");
     }
 }
