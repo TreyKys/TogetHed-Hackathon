@@ -12,9 +12,11 @@ import {
   ContractExecuteTransaction,
   ContractFunctionParameters,
   Hbar,
-  AccountBalanceQuery
+  AccountBalanceQuery,
+  ContractCallQuery
 } from '@hashgraph/sdk';
-import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc } from '../firebase';
+import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc } from '../firebase';
+import { canonicalSerial, listingDocId } from '../firestoreHelpers';
 import {
   escrowContractAccountId,
   assetTokenId,
@@ -218,33 +220,35 @@ export const WalletProvider = ({ children }) => {
     // 2. List on-chain
     const listTxResponse = await handleList(price, serialNumber);
 
-    // 3. Save to Firestore with 'Pending Confirmation' status
-    const listingRef = await addDoc(collection(db, "listings"), {
-      tokenId: assetTokenId,
-      serialNumber: Number(serialNumber),
-      name,
-      description,
-      price: Hbar.from(price).toTinybars().toString(),
-      category,
-      sellerAccountId: accountId,
-      sellerEvmAddress: evmAddress,
-      imageUrl,
-      createdAt: Timestamp.now(),
-      status: 'Pending Confirmation', // Initial status
-    });
-
     const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
     const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
     const userAccountId = AccountId.fromString(accountId);
     const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
     // Wait for the on-chain listing receipt
-    await listTxResponse.getReceipt(userClient);
+    const receipt = await listTxResponse.getReceipt(userClient);
 
-    // 4. Update status to 'Listed' after on-chain confirmation
-    await updateDoc(listingRef, {
-      status: 'Listed',
+    if (receipt.status.toString() !== 'SUCCESS') {
+        throw new Error(`On-chain listing failed with status: ${receipt.status.toString()}`);
+    }
+
+    // 3. Save to Firestore after on-chain confirmation
+    const docId = listingDocId(assetTokenId, serialNumber);
+    const priceTinybarsStr = Hbar.from(price).toTinybars().toString();
+
+    await setDoc(doc(db, "listings", docId), {
+      tokenId: assetTokenId,
+      serialNumber: canonicalSerial(serialNumber),
+      name,
+      description,
+      priceTinybars: priceTinybarsStr, // string canonical
+      category,
+      sellerAccountId: accountId,
+      sellerEvmAddress: evmAddress,
+      imageUrl,
+      state: "LISTED",
+      contractTxId: listTxResponse.transactionId.toString(),
+      createdAt: Date.now()
     });
-
 
     setFlowState("LISTED");
     return { serialNumber };
@@ -495,8 +499,9 @@ export const WalletProvider = ({ children }) => {
   };
 
   const handleBuy = async (listing) => {
-    console.log("handleBuy: Initiating purchase for listing:", listing);
-    if (!listing || !listing.serialNumber || !listing.price) {
+    console.log("DEBUG handleBuy start", { accountId: accountId, assetTokenId, nftSerialNumber: listing.serialNumber });
+    const priceTinybarsStr = listing.priceTinybars || listing.price || "0";
+    if (!listing || !listing.serialNumber || priceTinybarsStr === "0") {
       throw new Error("Invalid listing data provided to handleBuy.");
     }
 
@@ -511,7 +516,7 @@ export const WalletProvider = ({ children }) => {
       .setFunction("fundEscrow", new ContractFunctionParameters()
         .addUint256(listing.serialNumber)
       )
-      .setPayableAmount(Hbar.fromTinybars(listing.price));
+      .setPayableAmount(Hbar.fromTinybars(priceTinybarsStr));
 
     const frozenTx = await fundEscrowTx.freezeWith(client);
     const signedTx = await frozenTx.sign(userPrivateKey);
@@ -524,25 +529,77 @@ export const WalletProvider = ({ children }) => {
       throw new Error(`Funding escrow failed with status: ${receipt.status.toString()}`);
     }
 
-    // After successful on-chain transaction, find the document by serialNumber and update it
-    console.log(`handleBuy: On-chain success. Now updating Firestore for serial number: ${listing.serialNumber}`);
-    const listingsRef = collection(db, 'listings');
-    const q = query(listingsRef, where("serialNumber", "==", Number(listing.serialNumber)));
+    // 1) Verify on-chain listing state for nftSerialNumber
+    const callQuery = new ContractCallQuery()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(listing.serialNumber)));
 
-    const querySnapshot = await getDocs(q);
+    const callResult = await callQuery.execute(client);
 
-    if (querySnapshot.empty) {
-      console.error(`handleBuy Error: Could not find a listing with serial number ${listing.serialNumber} in Firestore to update.`);
-      throw new Error("Critical error: On-chain transaction succeeded, but failed to update corresponding database record.");
+    // parse results: seller, buyer, price, state
+    const onchainSeller = callResult.getAddress(0);
+    const onchainBuyer = callResult.getAddress(1);
+    const onchainPriceTinybars = callResult.getUint256(2).toString();
+    const onchainStateNum = Number(callResult.getUint256(3).toString());
+
+    console.log("DEBUG onchainPriceTinybars:", onchainPriceTinybars, "onchainStateNum:", onchainStateNum);
+
+    // Confirm state is FUNDED (state enum 1)
+    if (onchainStateNum !== 1) {
+      console.error("handleBuy: on-chain state is not FUNDED:", onchainStateNum);
+      throw new Error("Escrow: on-chain state not set to FUNDED after funding tx");
     }
 
-    const listingDoc = querySnapshot.docs[0];
-    await updateDoc(listingDoc.ref, {
-      status: 'Funded',
-      buyerAccountId: accountId,
-    });
+    // 2) Build canonical doc id & try direct update
+    const docId = listingDocId(assetTokenId, listing.serialNumber);
+    const listingRef = doc(db, "listings", docId);
+    const listingSnap = await getDoc(listingRef);
 
-    console.log("handleBuy: Purchase successful and Firestore updated.");
+    console.log("DEBUG canonicalDocId:", docId);
+    console.log("DEBUG firestore listing exists:", listingSnap.exists());
+
+    const updatePayload = {
+      state: "FUNDED",
+      buyer: accountId,
+      paidTinybars: String(onchainPriceTinybars),
+      fundTxId: txResponse.transactionId.toString(),
+      updatedAt: Date.now()
+    };
+
+    if (listingSnap.exists()) {
+      await updateDoc(listingRef, updatePayload);
+      console.log("handleBuy: updated listing doc directly:", docId);
+    } else {
+      // fallback: query by tokenId + serialNumber (types must match)
+      const q = query(collection(db, "listings"),
+                      where("tokenId", "==", assetTokenId),
+                      where("serialNumber", "==", canonicalSerial(listing.serialNumber)));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        const firstDocRef = qSnap.docs[0].ref;
+        await updateDoc(firstDocRef, updatePayload);
+        console.log("handleBuy: updated listing doc via query:", firstDocRef.id);
+      } else {
+        // LAST RESORT: create canonical listing doc (shouldn't usually happen)
+        console.warn("handleBuy: listing doc not found; creating new listing doc:", docId);
+        await setDoc(listingRef, {
+          tokenId: assetTokenId,
+          serialNumber: canonicalSerial(listing.serialNumber),
+          seller: onchainSeller || null,
+          buyer: accountId,
+          priceTinybars: String(onchainPriceTinybars),
+          state: "FUNDED",
+          fundTxId: txResponse.transactionId.toString(),
+          createdAt: Date.now()
+        });
+      }
+    }
+
+    // 3) Update UI AFTER Firestore write
+    setFlowState("FUNDED");
+    setStatus(`✅ Escrow funded — paid ${Hbar.fromTinybars(onchainPriceTinybars).toString()}`);
+
     return receipt;
   };
 
