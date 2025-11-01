@@ -598,7 +598,6 @@ export const WalletProvider = ({ children }) => {
 
     // 3) Update UI AFTER Firestore write
     setFlowState("FUNDED");
-    setStatus(`✅ Escrow funded — paid ${Hbar.fromTinybars(onchainPriceTinybars).toString()}`);
 
     return receipt;
   };

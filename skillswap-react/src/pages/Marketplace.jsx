@@ -20,7 +20,7 @@ import {
 import { escrowContractAccountId } from '../hedera.js';
 
 function Marketplace() {
-  const { accountId, privateKey, userProfile, isLoaded, isProfileLoading, setFlowState } = useWallet();
+  const { accountId, privateKey, userProfile, isLoaded, isProfileLoading, setFlowState, handleBuy } = useWallet();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Goods & Produce');
@@ -72,11 +72,11 @@ function Marketplace() {
         throw new Error("This asset is not currently listed for sale or has a price of zero.");
       }
 
-      const priceInTinybars = priceInTinybarsLong.toNumber();
-      console.log("handleBuyClick: Converted price (Number):", priceInTinybars);
+      const priceInTinybars = priceInTinybarsLong.toString();
+      console.log("handleBuyClick: Converted price (String):", priceInTinybars);
 
       // Set the selected listing with the definitive on-chain price
-      setSelectedListing({ ...listing, priceInTinybars });
+      setSelectedListing({ ...listing, price: priceInTinybars, priceTinybars: priceInTinybars });
       setIsModalOpen(true);
       console.log("handleBuyClick: Opening confirmation modal.");
 
@@ -87,61 +87,20 @@ function Marketplace() {
   };
 
   const executeBuy = async () => {
-    if (!selectedListing) {
-      console.error("executeBuy: Attempted to buy without a selected listing.");
-      return;
-    }
-    console.log("executeBuy: Executing purchase for:", selectedListing);
+    if (!selectedListing) return;
+
     setIsModalOpen(false);
     setIsTransactionLoading(true);
 
     try {
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      console.log(`executeBuy: Funding escrow with ${selectedListing.priceInTinybars} tinybars for serial ${selectedListing.serialNumber}`);
-
-      const fundTx = new ContractExecuteTransaction()
-        .setContractId(escrowContractAccountId)
-        .setGas(1000000)
-        .setPayableAmount(Hbar.fromTinybars(selectedListing.priceInTinybars))
-        .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(selectedListing.serialNumber));
-
-      const frozenFundTx = await fundTx.freezeWith(userClient);
-      const signedFundTx = await frozenFundTx.sign(userPrivateKey);
-      const fundTxResponse = await signedFundTx.execute(userClient);
-      console.log("executeBuy: Transaction submitted. Waiting for receipt...");
-      await fundTxResponse.getReceipt(userClient);
-      console.log("executeBuy: Transaction confirmed.");
-
-      // Update Firestore document to 'Pending Delivery'
-      console.log("executeBuy: Updating Firestore status to 'Pending Delivery' for listing ID:", selectedListing.id);
-      const listingRef = doc(db, 'listings', selectedListing.id);
-      await updateDoc(listingRef, {
-        status: 'Pending Delivery',
-        buyerAccountId: accountId
-      });
-      console.log("executeBuy: Firestore status updated.");
-
-      setPurchasedItemName(selectedListing.name);
-      setFlowState("FUNDED");
-      setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: fundTxResponse.transactionId.toString() });
-
+      const receipt = await handleBuy(selectedListing);
+      setToast({ show: true, message: `Congratulations! You have purchased '${selectedListing.name}'.`, txHash: receipt.transactionId.toString() });
     } catch (error) {
-      console.error("executeBuy: Full error object:", error);
-      let errorMessage = error.message;
-      if (error.status) {
-         errorMessage = `Transaction failed with status: ${error.status.toString()}`;
-      } else if (error.message.includes('insufficient')) {
-         errorMessage = 'Insufficient account balance to complete the purchase.';
-      }
-      setToast({ show: true, message: `Purchase Failed: ${errorMessage}` });
+      console.error("executeBuy Error:", error);
+      setToast({ show: true, message: `Purchase Failed: ${error.message}` });
     } finally {
       setIsTransactionLoading(false);
-      setSelectedListing(null); // Clear selected listing after the attempt
-      console.log("executeBuy: Purchase flow finished.");
+      setSelectedListing(null);
     }
   };
 
