@@ -15,7 +15,7 @@ import {
   AccountBalanceQuery,
   ContractCallQuery
 } from '@hashgraph/sdk';
-import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc } from '../firebase';
+import { db, collection, addDoc, Timestamp, doc, getDoc, query, where, getDocs, updateDoc, setDoc, runTransaction } from '../firebase';
 import { canonicalSerial, listingDocId } from '../firestoreHelpers';
 import {
   escrowContractAccountId,
@@ -266,37 +266,46 @@ export const WalletProvider = ({ children }) => {
       throw new Error("State error: nftSerialNumber is missing.");
     }
     console.log(`handleList: Listing NFT ${assetTokenId} - Serial: ${currentSerial} for price: ${price}`);
+    console.log("handleList input types:", { price: typeof price, serialToUse: typeof serialToUse });
 
     const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
     const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
     const userAccountId = AccountId.fromString(accountId);
     const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
+    // Step 1: Approve allowance for the escrow contract
+    console.log("handleList: Approving NFT allowance...");
     const tokenIdObj = TokenId.fromString(assetTokenId);
-    const nftIdObj = new NftId(tokenIdObj, Number(currentSerial));
+    const serialNumberInt = Number(currentSerial);
+    console.log("handleList allowance params:", { tokenId: assetTokenId, owner: accountId, spender: escrowContractAccountId, serial: serialNumberInt });
 
     const allowanceTx = new AccountAllowanceApproveTransaction()
-      .approveTokenNftAllowance(nftIdObj, userAccountId, escrowContractAccountId);
+      .approveTokenNftAllowance(tokenIdObj, userAccountId, AccountId.fromString(escrowContractAccountId), [serialNumberInt]);
 
-    const frozenTx = await allowanceTx.freezeWith(userClient);
-    const signedTx = await frozenTx.sign(userPrivateKey);
-    const txResponse = await signedTx.execute(userClient);
-    await txResponse.getReceipt(userClient);
+    const allowanceTxResponse = await allowanceTx.execute(userClient);
+    const allowanceReceipt = await allowanceTxResponse.getReceipt(userClient);
 
-    const priceInWei = Hbar.from(price).toTinybars();
+    if (allowanceReceipt.status.toString() !== 'SUCCESS') {
+      throw new Error(`NFT allowance failed with status: ${allowanceReceipt.status.toString()}`);
+    }
+    console.log("handleList: NFT allowance approved successfully.");
+
+    // Step 2: List the asset on the contract
+    console.log("handleList: Listing asset on escrow contract...");
+    const priceInTinybars = Hbar.from(price).toTinybars();
+    const serialCanonical = BigInt(String(currentSerial).trim());
+    console.log("handleList listAsset params:", { serial: serialCanonical.toString(), priceTinybars: priceInTinybars.toString() });
+
     const listAssetTx = new ContractExecuteTransaction()
       .setContractId(escrowContractAccountId)
       .setGas(1000000)
       .setFunction("listAsset", new ContractFunctionParameters()
-        .addUint256(currentSerial)
-        .addUint256(priceInWei)
+        .addUint256(serialCanonical)
+        .addUint256(priceInTinybars)
       );
 
-    const frozenListTx = await listAssetTx.freezeWith(userClient);
-    const signedListTx = await frozenListTx.sign(userPrivateKey);
-    const listTxResponse = await signedListTx.execute(userClient);
-
-    // Note: We await the receipt in the calling function now.
+    const listTxResponse = await listAssetTx.execute(userClient);
+    console.log("handleList: On-chain list transaction sent.");
 
     setFlowState("LISTED");
     return listTxResponse;
@@ -434,42 +443,54 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   }
 
-  const confirmDelivery = async (listing) => {
-    console.log("confirmDelivery: confirming delivery for listing:", listing);
-    if (!listing || !listing.serialNumber) {
-      throw new Error("Invalid listing data provided to confirmDelivery.");
-    }
+const confirmDelivery = async (listing) => {
+  console.log("confirmDelivery: confirming delivery for listing:", listing);
+  if (!listing || !listing.serialNumber) {
+    throw new Error("Invalid listing passed to confirmDelivery");
+  }
 
-    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-    const userAccountId = AccountId.fromString(accountId);
-    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+  let serialCanonical;
+  try {
+    serialCanonical = BigInt(String(listing.serialNumber));
+  } catch (err) {
+    console.error("confirmDelivery: invalid serial number", listing.serialNumber, typeof listing.serialNumber);
+    throw new Error("Invalid serial number in listing");
+  }
+  console.log("confirmDelivery canonical serial:", serialCanonical, typeof serialCanonical);
 
-    const confirmDeliveryTx = new ContractExecuteTransaction()
-      .setContractId(escrowContractAccountId)
-      .setGas(200000)
-      .setFunction("confirmDelivery", new ContractFunctionParameters()
-        .addUint256(listing.serialNumber)
-      );
+  const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+  const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+  const userAccountId = AccountId.fromString(accountId);
+  const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
-    const frozenTx = await confirmDeliveryTx.freezeWith(client);
-    const signedTx = await frozenTx.sign(userPrivateKey);
-    const txResponse = await signedTx.execute(client);
+  const confirmDeliveryTx = new ContractExecuteTransaction()
+    .setContractId(escrowContractAccountId)
+    .setGas(200000)
+    .setFunction("confirmDelivery", new ContractFunctionParameters().addUint256(serialCanonical));
 
-    const receipt = await txResponse.getReceipt(client);
+  const txResponse = await confirmDeliveryTx.execute(client);
+  const receipt = await txResponse.getReceipt(client);
 
-    if (receipt.status.toString() !== 'SUCCESS') {
-      throw new Error(`Confirm delivery failed with status: ${receipt.status.toString()}`);
-    }
+  if (receipt.status.toString() !== "SUCCESS") {
+    throw new Error(`confirmDelivery failed with status: ${receipt.status.toString()}`);
+  }
 
-    const listingRef = doc(db, 'listings', listing.id);
-    await updateDoc(listingRef, {
-      status: 'Delivered',
+  // Update Firestore state atomically
+  const docId = listingDocId(assetTokenId, listing.serialNumber);
+  await runTransaction(db, async (t) => {
+    const docRef = doc(db, "listings", docId);
+    const snap = await t.get(docRef);
+    if (!snap.exists()) throw new Error("Listing not found for delivery confirmation");
+
+    t.update(docRef, {
+      state: "LIQUIDATED", // Or "DELIVERED" depending on final state machine
+      settlementTxId: txResponse.transactionId.toString(),
+      updatedAt: Date.now(),
     });
+  });
 
-    console.log("confirmDelivery: Delivery confirmed and Firestore updated.");
-    return receipt;
-  };
+  return receipt;
+};
 
   const withdrawPayments = async () => {
     console.log("withdrawPayments: withdrawing payments for account:", accountId);
@@ -498,109 +519,114 @@ export const WalletProvider = ({ children }) => {
     return receipt;
   };
 
-  const handleBuy = async (listing) => {
-    console.log("DEBUG handleBuy start", { accountId: accountId, assetTokenId, nftSerialNumber: listing.serialNumber });
-    const priceTinybarsStr = listing.priceTinybars || listing.price || "0";
-    if (!listing || !listing.serialNumber || priceTinybarsStr === "0") {
-      throw new Error("Invalid listing data provided to handleBuy.");
+// REPLACE the existing handleBuy with this version
+const handleBuy = async (listing) => {
+  console.log("DEBUG handleBuy start", { accountId, assetTokenId, nftSerialNumber: listing?.serialNumber });
+
+  // Basic validation & canonicalization
+  if (!listing || listing.serialNumber === undefined || listing.serialNumber === null) {
+    throw new Error("Invalid listing: missing serialNumber");
+  }
+  // Ensure serial is numeric string or number -> use BigInt
+  let serialCanonical;
+  try {
+    // Accept string, number, or BigInt
+    serialCanonical = BigInt(String(listing.serialNumber).trim());
+  } catch (err) {
+    console.error("handleBuy: invalid serial number", listing.serialNumber);
+    throw new Error("Invalid serial number for listing");
+  }
+
+  // Price canonicalization: we expect tinybars as a decimal integer string in listing.priceTinybars
+  const priceTinybarsStr = String(listing.priceTinybars || listing.price || "0").trim();
+  console.log("handleBuy canonical inputs:", { serial: serialCanonical.toString(), priceTinybars: priceTinybarsStr });
+  if (!/^\d+$/.test(priceTinybarsStr)) {
+    console.error("handleBuy: priceTinybars is not a numeric string:", priceTinybarsStr, typeof priceTinybarsStr);
+    throw new Error("Invalid price for listing");
+  }
+
+  if (priceTinybarsStr === "0") {
+    throw new Error("Listing has price 0 or is invalid");
+  }
+
+  // operator client: use the buyer's account as the client operator
+  const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+  const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+  const userAccountId = AccountId.fromString(accountId);
+  const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+  // Build the contract execute tx and let the SDK sign with the client operator (no manual sign)
+  const fundEscrowTx = new ContractExecuteTransaction()
+    .setContractId(escrowContractAccountId)
+    .setGas(200000)
+    .setFunction("fundEscrow", new ContractFunctionParameters().addUint256(serialCanonical))
+    .setPayableAmount(Hbar.fromTinybars(priceTinybarsStr)); // Hbar.fromTinybars accepts numeric string
+
+  // Execute (SDK will sign with the client operator)
+  const txResponse = await fundEscrowTx.execute(client);
+  const receipt = await txResponse.getReceipt(client);
+
+  if (receipt.status.toString() !== "SUCCESS") {
+    throw new Error(`Funding escrow failed with status: ${receipt.status.toString()}`);
+  }
+
+  // Sanity-check on-chain using the same client
+  const callQuery = new ContractCallQuery()
+    .setContractId(escrowContractAccountId)
+    .setGas(200000)
+    .setFunction("listings", new ContractFunctionParameters().addUint256(serialCanonical));
+
+  const callResult = await callQuery.execute(client);
+  const onchainSeller = callResult.getAddress(0);
+  const onchainBuyer = callResult.getAddress(1);
+  const onchainPriceTinybars = callResult.getUint256(2).toString();
+  const onchainStateNum = Number(callResult.getUint256(3).toString());
+
+  console.log("DEBUG onchainPriceTinybars:", onchainPriceTinybars, "onchainStateNum:", onchainStateNum);
+
+  if (onchainStateNum !== 1) { // ensure your enum mapping: 1 == FUNDED
+    console.error("handleBuy: onchain state not FUNDED", onchainStateNum);
+    throw new Error("Escrow: on-chain state not set to FUNDED after funding tx");
+  }
+
+  // Update Firestore atomically (recommended) -- use a transaction to avoid race conditions
+  const docId = listingDocId(assetTokenId, listing.serialNumber);
+  await runTransaction(db, async (t) => {
+    const docRef = doc(db, "listings", docId);
+    const snap = await t.get(docRef);
+    if (!snap.exists()) throw new Error("Listing not found during update");
+
+    const currentState = snap.data().state;
+    if (currentState && currentState !== "LISTED") {
+      throw new Error("Listing state not in expected LISTED state");
     }
 
-    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-    const userAccountId = AccountId.fromString(accountId);
-    const client = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-    const fundEscrowTx = new ContractExecuteTransaction()
-      .setContractId(escrowContractAccountId)
-      .setGas(200000) // Increased gas for safety
-      .setFunction("fundEscrow", new ContractFunctionParameters()
-        .addUint256(listing.serialNumber)
-      )
-      .setPayableAmount(Hbar.fromTinybars(priceTinybarsStr));
-
-    const frozenTx = await fundEscrowTx.freezeWith(client);
-    const signedTx = await frozenTx.sign(userPrivateKey);
-    const txResponse = await signedTx.execute(client);
-
-    // Wait for the transaction to be confirmed on the network
-    const receipt = await txResponse.getReceipt(client);
-
-    if (receipt.status.toString() !== 'SUCCESS') {
-      throw new Error(`Funding escrow failed with status: ${receipt.status.toString()}`);
-    }
-
-    // 1) Verify on-chain listing state for nftSerialNumber
-    const callQuery = new ContractCallQuery()
-      .setContractId(escrowContractAccountId)
-      .setGas(200000)
-      .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(listing.serialNumber)));
-
-    const callResult = await callQuery.execute(client);
-
-    // parse results: seller, buyer, price, state
-    const onchainSeller = callResult.getAddress(0);
-    const onchainBuyer = callResult.getAddress(1);
-    const onchainPriceTinybars = callResult.getUint256(2).toString();
-    const onchainStateNum = Number(callResult.getUint256(3).toString());
-
-    console.log("DEBUG onchainPriceTinybars:", onchainPriceTinybars, "onchainStateNum:", onchainStateNum);
-
-    // Confirm state is FUNDED (state enum 1)
-    if (onchainStateNum !== 1) {
-      console.error("handleBuy: on-chain state is not FUNDED:", onchainStateNum);
-      throw new Error("Escrow: on-chain state not set to FUNDED after funding tx");
-    }
-
-    // 2) Build canonical doc id & try direct update
-    const docId = listingDocId(assetTokenId, listing.serialNumber);
-    const listingRef = doc(db, "listings", docId);
-    const listingSnap = await getDoc(listingRef);
-
-    console.log("DEBUG canonicalDocId:", docId);
-    console.log("DEBUG firestore listing exists:", listingSnap.exists());
-
-    const updatePayload = {
+    t.update(docRef, {
       state: "FUNDED",
       buyer: accountId,
       paidTinybars: String(onchainPriceTinybars),
       fundTxId: txResponse.transactionId.toString(),
-      updatedAt: Date.now()
-    };
+      updatedAt: Date.now(),
+    });
 
-    if (listingSnap.exists()) {
-      await updateDoc(listingRef, updatePayload);
-      console.log("handleBuy: updated listing doc directly:", docId);
-    } else {
-      // fallback: query by tokenId + serialNumber (types must match)
-      const q = query(collection(db, "listings"),
-                      where("tokenId", "==", assetTokenId),
-                      where("serialNumber", "==", canonicalSerial(listing.serialNumber)));
-      const qSnap = await getDocs(q);
-      if (!qSnap.empty) {
-        const firstDocRef = qSnap.docs[0].ref;
-        await updateDoc(firstDocRef, updatePayload);
-        console.log("handleBuy: updated listing doc via query:", firstDocRef.id);
-      } else {
-        // LAST RESORT: create canonical listing doc (shouldn't usually happen)
-        console.warn("handleBuy: listing doc not found; creating new listing doc:", docId);
-        await setDoc(listingRef, {
-          tokenId: assetTokenId,
-          serialNumber: canonicalSerial(listing.serialNumber),
-          seller: onchainSeller || null,
-          buyer: accountId,
-          priceTinybars: String(onchainPriceTinybars),
-          state: "FUNDED",
-          fundTxId: txResponse.transactionId.toString(),
-          createdAt: Date.now()
-        });
-      }
-    }
+    // Create the delivery gig
+    const gigRef = doc(collection(db, "gigs")); // auto-generates an ID
+    t.set(gigRef, {
+      title: `Deliver ${snap.data().name || 'item'} (#${listing.serialNumber})`,
+      listingId: docId,
+      origin: snap.data().pickupLocation || snap.data().location || "Unknown",
+      destination: "Buyer Location", // Placeholder
+      rewardTinybars: String(onchainPriceTinybars), // Or a calculated fee
+      status: "OPEN",
+      createdAt: Timestamp.now(),
+      buyerAccountId: accountId,
+      sellerAccountId: snap.data().sellerAccountId,
+    });
+  });
 
-    // 3) Update UI AFTER Firestore write
-    setFlowState("FUNDED");
-
-    return receipt;
-  };
+  setFlowState("FUNDED");
+  return receipt;
+};
 
   const value = {
     accountId,

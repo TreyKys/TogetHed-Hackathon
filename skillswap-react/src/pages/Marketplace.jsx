@@ -49,42 +49,47 @@ function Marketplace() {
   }, []);
 
 
-  const handleBuyClick = async (listing) => {
-    console.log("handleBuyClick: Initiating purchase for listing:", listing);
+const handleBuyClick = async (listing) => {
+  console.log("handleBuyClick: Initiating purchase for listing:", listing);
+  try {
+    if (!listing || !listing.serialNumber) throw new Error("Listing missing serial number");
+
+    // Validate serial number
+    let serialBig;
     try {
-      console.log("handleBuyClick: Fetching on-chain price for serial:", listing.serialNumber);
-      const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-      const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
-      const userAccountId = AccountId.fromString(accountId);
-      const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
-
-      const callQuery = new ContractCallQuery()
-        .setContractId(escrowContractAccountId)
-        .setGas(200000)
-        .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(listing.serialNumber)));
-
-      const callResult = await callQuery.execute(userClient);
-      const priceInTinybarsLong = callResult.getUint256(2);
-      console.log("handleBuyClick: Raw price from contract (Long):", priceInTinybarsLong.toString());
-
-      if (priceInTinybarsLong.isZero()) {
-        console.error("handleBuyClick: On-chain price is zero. Aborting.");
-        throw new Error("This asset is not currently listed for sale or has a price of zero.");
-      }
-
-      const priceInTinybars = priceInTinybarsLong.toString();
-      console.log("handleBuyClick: Converted price (String):", priceInTinybars);
-
-      // Set the selected listing with the definitive on-chain price
-      setSelectedListing({ ...listing, price: priceInTinybars, priceTinybars: priceInTinybars });
-      setIsModalOpen(true);
-      console.log("handleBuyClick: Opening confirmation modal.");
-
-    } catch (error) {
-      console.error("handleBuyClick: Error during price fetching:", error);
-      setToast({ show: true, message: `Error preparing purchase: ${error.message}` });
+      serialBig = BigInt(String(listing.serialNumber));
+    } catch (err) {
+      throw new Error("Invalid serial number in listing");
     }
-  };
+
+    const rawPrivKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
+    const userPrivateKey = PrivateKey.fromStringECDSA(rawPrivKey);
+    const userAccountId = AccountId.fromString(accountId);
+    const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
+
+    const callQuery = new ContractCallQuery()
+      .setContractId(escrowContractAccountId)
+      .setGas(200000)
+      .setFunction("listings", new ContractFunctionParameters().addUint256(serialBig));
+
+    const callResult = await callQuery.execute(userClient);
+    const priceInTinybarsLong = callResult.getUint256(2);
+
+    if (!priceInTinybarsLong || priceInTinybarsLong.isZero()) {
+      throw new Error("This asset is not currently listed for sale or has a price of zero.");
+    }
+
+    const priceInTinybars = priceInTinybarsLong.toString();
+    console.log("handleBuyClick: Canonical serial:", serialBig, typeof serialBig);
+    console.log("handleBuyClick: Converted price (String):", priceInTinybars);
+
+    setSelectedListing({ ...listing, price: priceInTinybars, priceTinybars: priceInTinybars });
+    setIsModalOpen(true);
+  } catch (error) {
+    console.error("handleBuyClick: error preparing purchase:", error);
+    setToast({ show: true, message: `Error preparing purchase: ${error.message}` });
+  }
+};
 
   const executeBuy = async () => {
     if (!selectedListing) return;
