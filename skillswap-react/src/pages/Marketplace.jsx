@@ -58,13 +58,13 @@ function Marketplace() {
       const userAccountId = AccountId.fromString(accountId);
       const userClient = Client.forTestnet().setOperator(userAccountId, userPrivateKey);
 
-      const getPriceQuery = new ContractCallQuery()
+      const callQuery = new ContractCallQuery()
         .setContractId(escrowContractAccountId)
-        .setGas(100000)
-        .setFunction("getListingPrice", new ContractFunctionParameters().addUint256(listing.serialNumber));
+        .setGas(200000)
+        .setFunction("listings", new ContractFunctionParameters().addUint256(BigInt(listing.serialNumber)));
 
-      const priceQueryResult = await getPriceQuery.execute(userClient);
-      const priceInTinybarsLong = priceQueryResult.getUint256(0);
+      const callResult = await callQuery.execute(userClient);
+      const priceInTinybarsLong = callResult.getUint256(2);
       console.log("handleBuyClick: Raw price from contract (Long):", priceInTinybarsLong.toString());
 
       if (priceInTinybarsLong.isZero()) {
