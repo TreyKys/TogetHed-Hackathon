@@ -198,14 +198,14 @@ function Marketplace() {
             initial="hidden"
             animate="visible"
           >
-            {listings.filter(l => l.category === activeTab && l.status === 'Listed').map(listing => (
+            {listings.filter(l => l.category === activeTab && (l.status === 'Listed' || l.state === 'LISTED')).map(listing => (
               <motion.div key={listing.id} className="listing-card" variants={itemVariants}>
                 <img src={listing.imageUrl} alt={listing.name} className="listing-image" />
                 <div className="listing-info">
                   <h3>{listing.name}</h3>
                   <p>{listing.description}</p>
                   <div className="listing-footer">
-                    <span className="listing-price">{Hbar.fromTinybars(listing.price).toString()} ℏ</span>
+                    <span className="listing-price">{Hbar.fromTinybars(listing.priceTinybars || listing.price || '0').toString()} ℏ</span>
                     <button onClick={() => handleBuyClick(listing)} className="buy-button" disabled={isTransactionLoading}>
                       Buy Now
                     </button>

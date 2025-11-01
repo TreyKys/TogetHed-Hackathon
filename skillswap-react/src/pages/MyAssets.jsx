@@ -56,12 +56,13 @@ const MyAssets = () => {
             const ownedAssets = userNfts.map(nft => {
                 const metadata = decodeMetadata(nft.metadata);
                 const firestoreInfo = firestoreListings[nft.serial_number];
+                const currentStatus = firestoreInfo ? (firestoreInfo.state || firestoreInfo.status) : 'In Wallet';
                 return {
                     serialNumber: nft.serial_number,
                     name: metadata.name || 'Untitled Asset',
                     description: metadata.description || 'No description.',
                     imageUrl: metadata.image || 'https://via.placeholder.com/150',
-                    status: firestoreInfo ? firestoreInfo.status : 'In Wallet',
+                    status: currentStatus,
                     id: firestoreInfo ? firestoreInfo.id : null,
                 };
             });
@@ -71,7 +72,7 @@ const MyAssets = () => {
                 .filter(listing => listing.buyerAccountId === accountId && !ownedAssets.find(a => a.serialNumber === listing.serialNumber))
                 .map(listing => ({
                     ...listing, // contains name, description, imageUrl, etc. from Firestore
-                    status: listing.status,
+                    status: listing.state || listing.status,
                 }));
 
             setAssets([...ownedAssets, ...purchasedAssets]);
@@ -123,7 +124,7 @@ const MyAssets = () => {
                                 <h3>{asset.name}</h3>
                                 <p className="asset-serial">Serial: {asset.serialNumber}</p>
                                 <div className="asset-status-wrapper">
-                                    <span className={`status-badge status-${asset.status.toLowerCase().replace(/ /g, '-')}`}>
+                                    <span className={`status-badge status-${(asset.status || '').toLowerCase().replace(/ /g, '-')}`}>
                                         {asset.status}
                                     </span>
                                 </div>
