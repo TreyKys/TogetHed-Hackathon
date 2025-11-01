@@ -524,9 +524,20 @@ export const WalletProvider = ({ children }) => {
       throw new Error(`Funding escrow failed with status: ${receipt.status.toString()}`);
     }
 
-    // After successful on-chain transaction, update Firestore
-    const listingRef = doc(db, 'listings', listing.id);
-    await updateDoc(listingRef, {
+    // After successful on-chain transaction, find the document by serialNumber and update it
+    console.log(`handleBuy: On-chain success. Now updating Firestore for serial number: ${listing.serialNumber}`);
+    const listingsRef = collection(db, 'listings');
+    const q = query(listingsRef, where("serialNumber", "==", Number(listing.serialNumber)));
+
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      console.error(`handleBuy Error: Could not find a listing with serial number ${listing.serialNumber} in Firestore to update.`);
+      throw new Error("Critical error: On-chain transaction succeeded, but failed to update corresponding database record.");
+    }
+
+    const listingDoc = querySnapshot.docs[0];
+    await updateDoc(listingDoc.ref, {
       status: 'Funded',
       buyerAccountId: accountId,
     });
